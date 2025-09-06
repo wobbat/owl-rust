@@ -1,6 +1,6 @@
 use crate::commands::{add, adopt, apply, dots, edit};
-use crate::infrastructure::color as colo;
-use crate::infrastructure::constants;
+use crate::internal::color as colo;
+use crate::internal::constants;
 
 /// Global options for the CLI
 #[derive(Debug, Clone)]
@@ -206,13 +206,13 @@ pub fn execute_command(opts: &CliOptions) {
         Command::Add { items, search } => add::run(items, *search),
         Command::Adopt { items, all } => adopt::run(items, *all),
         Command::ConfigCheck { file } => {
-            if let Err(err) = crate::domain::config::run_configcheck(file) {
+            if let Err(err) = crate::core::config::run_configcheck(file) {
                 eprintln!("{}", colo::red(&err.to_string()));
                 std::process::exit(1);
             }
         }
         Command::ConfigHost => {
-            if let Err(err) = crate::domain::config::run_confighost() {
+            if let Err(err) = crate::core::config::run_confighost() {
                 eprintln!("{}", colo::red(&err.to_string()));
                 std::process::exit(1);
             }

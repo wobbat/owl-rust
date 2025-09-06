@@ -1,4 +1,4 @@
-use crate::infrastructure::color as colo;
+use crate::internal::color as colo;
 use std::io::Write;
 
 fn confirm_operation(
@@ -33,7 +33,7 @@ pub fn generate_apply_output_with_install(
     service_count: usize,
     remove_count: usize,
 ) {
-    let host_name = crate::infrastructure::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
+    let host_name = crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
     println!("[{}]", colo::blue("info"));
     println!("  host: {}", colo::bold(&host_name));
     println!(
@@ -60,7 +60,7 @@ pub fn generate_apply_output_with_install(
     } else {
         println!(
             "  {} {}",
-            crate::infrastructure::color::green("➔"),
+            crate::internal::color::green("➔"),
             colo::dim("no packages to upgrade")
         );
     }

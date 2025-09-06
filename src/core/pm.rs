@@ -2,10 +2,7 @@ use std::collections::HashSet;
 use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PackageSource {
-    Repo,
-    Aur,
-}
+pub enum PackageSource { Repo, Aur }
 
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -31,26 +28,20 @@ pub trait PackageManager {
 }
 
 pub struct ParuPacman;
-
-impl ParuPacman {
-    pub fn new() -> Self { Self }
-}
+impl ParuPacman { pub fn new() -> Self { Self } }
 
 impl PackageManager for ParuPacman {
     fn list_installed(&self) -> Result<HashSet<String>, String> {
-        // Use quiet flag to reduce output size and parsing work
-        let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
+        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
             .arg("-Qq")
             .output()
             .map_err(|e| format!("Failed to get installed packages: {}", e))?;
-
         if !output.status.success() {
             return Err(format!(
                 "Package manager failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
-
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut installed = HashSet::new();
         for line in stdout.lines() {
@@ -61,71 +52,50 @@ impl PackageManager for ParuPacman {
     }
 
     fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>, String> {
-        if packages.is_empty() {
-            return Ok(HashSet::new());
-        }
+        if packages.is_empty() { return Ok(HashSet::new()); }
         let mut cmd = Command::new("pacman");
         cmd.arg("-Si");
         cmd.args(packages);
         let output = cmd.output().map_err(|e| format!("Failed to check package info: {}", e))?;
-
-        // pacman may exit non-zero if any package doesn't exist; still parse stdout for successes
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut repo_names = HashSet::new();
         for line in stdout.lines() {
-            // Lines look like: "Name            : bash"
             if let Some(rest) = line.strip_prefix("Name") {
                 if let Some(idx) = rest.find(':') {
                     let value = rest[idx + 1..].trim();
-                    if !value.is_empty() {
-                        repo_names.insert(value.to_string());
-                    }
+                    if !value.is_empty() { repo_names.insert(value.to_string()); }
                 }
             }
         }
-
         Ok(repo_names)
     }
 
     fn upgrade_count(&self) -> Result<usize, String> {
-        // Add quiet flag to minimize bytes transferred/parsed
-        let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
+        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
             .args(["-Qu", "-q"])
             .output()
             .map_err(|e| format!(
                 "Failed to run {} -Qu: {}",
-                crate::infrastructure::constants::PACKAGE_MANAGER,
+                crate::internal::constants::PACKAGE_MANAGER,
                 e
             ))?;
-
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             Ok(stdout.lines().count())
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if output.status.code() == Some(1) && stderr.trim().is_empty() {
-                Ok(0)
-            } else {
-                Err(format!(
-                    "{} -Qu failed: {}",
-                    crate::infrastructure::constants::PACKAGE_MANAGER,
-                    stderr
-                ))
-            }
+            if output.status.code() == Some(1) && stderr.trim().is_empty() { Ok(0) }
+            else { Err(format!("{} -Qu failed: {}", crate::internal::constants::PACKAGE_MANAGER, stderr)) }
         }
     }
 
     fn get_aur_updates(&self) -> Result<Vec<String>, String> {
-        // Quiet flag reduces each line to names in many setups
-        let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
+        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
             .args(["-Qua", "-q"])
             .output()
             .map_err(|e| format!("Failed to check AUR updates: {}", e))?;
-
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // If -q is honored, each line is the pkg name already.
-            // Fallback to first-token extraction if needed.
             let packages: Vec<String> = stdout
                 .lines()
                 .filter_map(|line| {
@@ -135,77 +105,53 @@ impl PackageManager for ParuPacman {
                 })
                 .collect();
             Ok(packages)
-        } else if output.status.code() == Some(1) {
-            Ok(vec![])
         } else {
-            Err(format!(
-                "AUR update check failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ))
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if output.status.code() == Some(1) && stderr.trim().is_empty() {
+                // Treat as no updates
+                Ok(Vec::new())
+            } else {
+                Err(format!("AUR update check failed: {}", stderr))
+            }
         }
     }
 
     fn install_repo(&self, packages: &[String]) -> Result<(), String> {
         if packages.is_empty() { return Ok(()); }
-        let mut args = vec!["-S", "--noconfirm"];
-        args.extend(packages.iter().map(|s| s.as_str()));
-        let (status, stderr_out) = crate::infrastructure::util::run_command_with_spinner_capture(
-            crate::infrastructure::constants::PACKAGE_MANAGER,
+        let args = ["--repo", "-S", "--noconfirm"];
+        let status = crate::internal::util::run_command_with_spinner(
+            crate::internal::constants::PACKAGE_MANAGER,
             &args,
-            "Installing from official repositories",
-        ).map_err(|e| e.to_string())?;
-        if status.success() {
-            println!("\r\x1b[2K  {} Package installation from official repositories completed", crate::infrastructure::color::green("⸎"));
-            Ok(())
-        } else {
-            eprintln!("{}", crate::infrastructure::color::red("package installation failed"));
-            let err = stderr_out.trim();
-            if !err.is_empty() {
-                let lines: Vec<&str> = err.lines().collect();
-                let take = 30usize;
-                let start = lines.len().saturating_sub(take);
-                for line in &lines[start..] { eprintln!("  {}", line); }
-            }
-            Err("repo installation failed".to_string())
-        }
+            &format!("Installing {} repo packages", packages.len()),
+        )?;
+        if !status.success() { return Err("Repository install failed".into()); }
+        Ok(())
     }
 
     fn install_aur(&self, packages: &[String]) -> Result<(), String> {
         if packages.is_empty() { return Ok(()); }
-        let mut args = vec!["-S", "--noconfirm"];
+        let mut args = vec!["--aur", "-S", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
-        let (status, stderr_out) = crate::infrastructure::util::run_command_with_spinner_capture(
-            crate::infrastructure::constants::PACKAGE_MANAGER,
+        let status = crate::internal::util::run_command_with_spinner(
+            crate::internal::constants::PACKAGE_MANAGER,
             &args,
-            "Installing from AUR",
-        ).map_err(|e| e.to_string())?;
-        if status.success() {
-            println!("\r\x1b[2K  {} Package installation from AUR completed", crate::infrastructure::color::green("⸎"));
-            Ok(())
-        } else {
-            eprintln!("{}", crate::infrastructure::color::red("AUR package installation failed"));
-            let err = stderr_out.trim();
-            if !err.is_empty() {
-                let lines: Vec<&str> = err.lines().collect();
-                let take = 30usize;
-                let start = lines.len().saturating_sub(take);
-                for line in &lines[start..] { eprintln!("  {}", line); }
-            }
-            Err("aur installation failed".to_string())
-        }
+            &format!("Installing {} AUR packages", packages.len()),
+        )?;
+        if !status.success() { return Err("AUR install failed".into()); }
+        Ok(())
     }
 
     fn update_repo(&self) -> Result<(), String> {
-        let status = crate::infrastructure::util::run_command_with_spinner(
-            crate::infrastructure::constants::PACKAGE_MANAGER,
+        let (status, _stderr_out) = crate::internal::util::run_command_with_spinner_capture(
+            crate::internal::constants::PACKAGE_MANAGER,
             &["--repo", "-Syu", "--noconfirm"],
             "Updating official repository packages (syncing databases and upgrading packages)",
         )?;
         if status.success() {
-            println!("  {} Official repos synced", crate::infrastructure::color::green("⸎"));
+            println!("  {} Official repos synced", crate::internal::color::green("⸎"));
             Ok(())
         } else if status.code() == Some(1) {
-            println!("  {} Packages from main repos have been updated", crate::infrastructure::color::green("⸎"));
+            println!("  {} Packages from main repos have been updated", crate::internal::color::green("⸎"));
             Ok(())
         } else {
             Err(format!("Repository update failed (exit code: {:?})", status.code()))
@@ -216,13 +162,13 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() { return Ok(()); }
         let mut args = vec!["--aur", "-Syu", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
-        let (status, stderr_out) = crate::infrastructure::util::run_command_with_spinner_capture(
-            crate::infrastructure::constants::PACKAGE_MANAGER,
+        let (status, stderr_out) = crate::internal::util::run_command_with_spinner_capture(
+            crate::internal::constants::PACKAGE_MANAGER,
             &args,
             "Updating AUR packages",
         ).map_err(|e| e.to_string())?;
         if status.success() {
-            println!("\r\x1b[2K  {} AUR package updates completed", crate::infrastructure::color::green("⸎"));
+            println!("\r\x1b[2K  {} AUR package updates completed", crate::internal::color::green("⸎"));
             Ok(())
         } else {
             let err = stderr_out.trim();
@@ -238,13 +184,13 @@ impl PackageManager for ParuPacman {
 
     fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<(), String> {
         if packages.is_empty() { return Ok(()); }
-        let mut cmd = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER);
+        let mut cmd = Command::new(crate::internal::constants::PACKAGE_MANAGER);
         cmd.arg("-Rns");
         if quiet { cmd.arg("--noconfirm"); }
         cmd.args(packages);
         let status = cmd.status().map_err(|e| format!("Failed to remove packages: {}", e))?;
         if status.success() {
-            println!("  {} Removed {} package(s)", crate::infrastructure::color::green("✓"), packages.len());
+            println!("  {} Removed {} package(s)", crate::internal::color::green("✓"), packages.len());
             Ok(())
         } else {
             Err("Package removal failed".to_string())
@@ -287,14 +233,7 @@ fn parse_header_line(line: &str) -> Result<SearchResult, String> {
     let (repo, name) = parse_repo_name(repo_name_part)?;
     let version = parts.get(1).ok_or("Missing version in header line")?;
     let installed = line.contains("[installed]");
-    Ok(SearchResult {
-        name: name.to_string(),
-        ver: version.to_string(),
-        source: if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo },
-        repo: repo.to_string(),
-        description: String::new(),
-        installed,
-    })
+    Ok(SearchResult { name: name.to_string(), ver: version.to_string(), source: if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo }, repo: repo.to_string(), description: String::new(), installed })
 }
 
 fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {

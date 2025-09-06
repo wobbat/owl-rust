@@ -1,4 +1,4 @@
-use crate::infrastructure::files;
+use crate::internal::files;
 
 /// Run the edit command to open files in editor
 pub fn run(typ: &str, arg: &str) -> Result<(), String> {
@@ -7,16 +7,15 @@ pub fn run(typ: &str, arg: &str) -> Result<(), String> {
     }
 
     match typ {
-        crate::infrastructure::constants::EDIT_TYPE_DOTS => {
+        crate::internal::constants::EDIT_TYPE_DOTS => {
             let path = files::get_dotfile_path(arg)?;
             files::open_editor(&path)
         }
-        crate::infrastructure::constants::EDIT_TYPE_CONFIG => {
+        crate::internal::constants::EDIT_TYPE_CONFIG => {
             let path = files::find_config_file(arg)?;
             files::open_editor(&path)
         }
         _ => Err(format!("invalid edit type '{}'. Must be '{}' or '{}'",
-            typ, crate::infrastructure::constants::EDIT_TYPE_DOTS, crate::infrastructure::constants::EDIT_TYPE_CONFIG)),
+            typ, crate::internal::constants::EDIT_TYPE_DOTS, crate::internal::constants::EDIT_TYPE_CONFIG)),
     }
 }
-

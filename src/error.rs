@@ -27,7 +27,7 @@ impl From<std::io::Error> for OwlError {
 
 /// Print an error message and exit with code 1
 pub fn exit_with_error(message: &str) -> ! {
-    eprintln!("{}", crate::infrastructure::color::red(message));
+    eprintln!("{}", crate::internal::color::red(message));
     process::exit(1);
 }
 

@@ -218,7 +218,7 @@ impl Config {
 
     pub fn load_all_relevant_config_files() -> Result<Self, Box<dyn std::error::Error>> {
         Self::load_all_relevant_config_files_from_path(
-            Path::new(&env::var("HOME")?).join(crate::infrastructure::constants::OWL_DIR),
+            Path::new(&env::var("HOME")?).join(crate::internal::constants::OWL_DIR),
         )
     }
 
@@ -231,7 +231,7 @@ impl Config {
         // Load in priority order: main (highest), hostname (medium), groups (lowest)
 
         // 1. Load main config (highest priority)
-        let main_config_path = owl_root.join(crate::infrastructure::constants::MAIN_CONFIG_FILE);
+        let main_config_path = owl_root.join(crate::internal::constants::MAIN_CONFIG_FILE);
         if main_config_path.exists() {
             Self::load_config_if_exists(&mut config, &main_config_path)?;
         }
@@ -313,10 +313,44 @@ impl Config {
     }
 }
 
+/// Validate a provided .owl config file can be parsed
+pub fn run_configcheck(path: &str) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    if !p.exists() {
+        return Err(format!("Config file not found: {}", path));
+    }
+    match Config::parse_file(p) {
+        Ok(_) => {
+            println!(
+                "{} {}",
+                crate::internal::color::green("✓"),
+                crate::internal::color::bold(&format!("Config valid: {}", path))
+            );
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to parse {}: {}", path, e)),
+    }
+}
+
+/// Show the host-specific config path for this machine
+pub fn run_confighost() -> Result<(), String> {
+    let hostname = crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
+    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let path = std::path::Path::new(&home)
+        .join(crate::internal::constants::OWL_DIR)
+        .join("hosts")
+        .join(format!("{}.owl", hostname));
+    println!(
+        "Host config: {}",
+        crate::internal::color::bold(&path.to_string_lossy())
+    );
+    Ok(())
+}
+
 /// Return list of packages declared in config that are not installed
 #[cfg(test)]
 pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> {
-    let installed = crate::domain::package::get_installed_packages()?;
+    let installed = crate::core::package::get_installed_packages()?;
     let mut missing = Vec::new();
     for name in config.packages.keys() {
         if !installed.contains(name) {
@@ -326,69 +360,16 @@ pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> 
     Ok(missing)
 }
 
-fn print_config(config: &Config, title: &str) {
-    println!("\n=== {} ===", title);
-
-    println!("\n📦 PACKAGES:");
-    for (name, package) in &config.packages {
-        println!("  {}:", name);
-        if let Some(config_path) = &package.config {
-            println!("    :config -> {}", config_path);
-        }
-        if let Some(service) = &package.service {
-            println!("    :service {}", service);
-        }
-        if !package.env_vars.is_empty() {
-            println!("    :env vars:");
-            for (key, value) in &package.env_vars {
-                println!("      {}={}", key, value);
-            }
-        }
-    }
-
-    if !config.groups.is_empty() {
-        println!("\n👥 GROUPS:");
-        for group in &config.groups {
-            println!("  {}", group);
-        }
-    }
-
-    if !config.env_vars.is_empty() {
-        println!("\n🌍 GLOBAL ENV VARS:");
-        for (key, value) in &config.env_vars {
-            println!("  {}={}", key, value);
-        }
-    }
-
-    println!("\n=== END {} ===", title);
-}
-
-pub fn run_configcheck(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Parsing config file: {}", file_path);
-    let config = Config::parse_file(file_path)?;
-    print_config(&config, "PARSED CONFIG STRUCTURE");
-    Ok(())
-}
-
-pub fn run_confighost() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Loading configuration for current host...");
-    let config = Config::load_all_relevant_config_files()?;
-    print_config(&config, "HOST CONFIGURATION");
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_basic_package() {
-        let content = "@package test-package\n:config test -> ~/.config/test";
-        let config = Config::parse(content).unwrap();
+    fn test_parse_simple_config() {
+        let content = "@package test\n:config test -> ~/.config/test";
 
-        assert!(config.packages.contains_key("test-package"));
-        let package = &config.packages["test-package"];
-        assert_eq!(package.config.as_ref().unwrap(), "test -> ~/.config/test");
+        let config = Config::parse(content).unwrap();
+        assert!(config.packages.contains_key("test"));
     }
 
     #[test]

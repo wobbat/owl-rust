@@ -1,10 +1,10 @@
 /// Get list of AUR packages that can be updated
 fn get_aur_updates() -> Result<Vec<String>, String> {
-    crate::domain::pm::ParuPacman::new().get_aur_updates()
+    crate::core::pm::ParuPacman::new().get_aur_updates()
 }
 
 /// Count packages that have dotfile configurations
-fn count_dotfile_packages(config: &crate::domain::config::Config) -> usize {
+fn count_dotfile_packages(config: &crate::core::config::Config) -> usize {
     config
         .packages
         .values()
@@ -13,7 +13,7 @@ fn count_dotfile_packages(config: &crate::domain::config::Config) -> usize {
 }
 
 /// Count total environment variables (package + global)
-fn count_environment_variables(config: &crate::domain::config::Config) -> usize {
+fn count_environment_variables(config: &crate::core::config::Config) -> usize {
     let package_env_vars = config
         .packages
         .values()
@@ -24,9 +24,9 @@ fn count_environment_variables(config: &crate::domain::config::Config) -> usize 
 
 type Analysis = (
     usize,                          // package_count
-    crate::domain::config::Config,          // config
-    crate::domain::state::PackageState,     // state
-    Vec<crate::domain::package::PackageAction>, // actions
+    crate::core::config::Config,          // config
+    crate::core::state::PackageState,     // state
+    Vec<crate::core::package::PackageAction>, // actions
     usize,                          // dotfile_count
     usize,                          // env_var_count
     usize,                          // service_count
@@ -38,17 +38,17 @@ fn analyze_system() -> Result<Analysis, String> {
 
     // Run independent, potentially slow operations in parallel
     // 1) Count upgradable packages
-    let count_handle = thread::spawn(|| crate::domain::package::get_package_count());
+    let count_handle = thread::spawn(|| crate::core::package::get_package_count());
     // 2) Load config files
     let config_handle = thread::spawn(|| {
-        crate::domain::config::Config::load_all_relevant_config_files()
+        crate::core::config::Config::load_all_relevant_config_files()
             .map_err(|e| e.to_string())
     });
     // 3) Load package state from disk
-    let state_handle = thread::spawn(|| crate::domain::state::PackageState::load());
+    let state_handle = thread::spawn(|| crate::core::state::PackageState::load());
     // 4) Prewarm installed package cache to avoid repeated -Q calls later
     let installed_warm_handle = thread::spawn(|| {
-        let _ = crate::domain::package::get_installed_packages();
+        let _ = crate::core::package::get_installed_packages();
         Ok::<(), String>(())
     });
 
@@ -78,19 +78,19 @@ fn analyze_system() -> Result<Analysis, String> {
         if let Err(e) = state.save() {
             eprintln!(
                 "{}",
-                crate::infrastructure::color::red(&format!("Failed to save seeded package state: {}", e))
+                crate::internal::color::red(&format!("Failed to save seeded package state: {}", e))
             );
         }
     }
 
     // Plan package actions (installs and removals)
-    let actions = crate::domain::package::plan_package_actions(&config, &state)
+    let actions = crate::core::package::plan_package_actions(&config, &state)
         .map_err(|e| format!("Failed to plan package actions: {}", e))?;
 
     // Calculate dynamic values
     let dotfile_count = count_dotfile_packages(&config);
     let env_var_count = count_environment_variables(&config);
-    let service_count = crate::domain::services::get_configured_services(&config).len();
+    let service_count = crate::core::services::get_configured_services(&config).len();
     let config_package_count = config.packages.len();
 
     Ok((
@@ -107,13 +107,13 @@ fn analyze_system() -> Result<Analysis, String> {
 
 /// Ensure packages that are currently in the config and installed are marked as managed
 fn seed_managed_with_desired_installed(
-    config: &crate::domain::config::Config,
-    state: &mut crate::domain::state::PackageState,
+    config: &crate::core::config::Config,
+    state: &mut crate::core::state::PackageState,
 ) -> Result<bool, String> {
     let mut changed = false;
     for pkg in config.packages.keys() {
         if !state.is_managed(pkg) {
-            match crate::domain::package::is_package_installed(pkg) {
+            match crate::core::package::is_package_installed(pkg) {
                 Ok(true) => {
                     state.add_managed(pkg.to_string());
                     changed = true;
@@ -122,7 +122,7 @@ fn seed_managed_with_desired_installed(
                 Err(e) => {
                     eprintln!(
                         "{}",
-                        crate::infrastructure::color::red(&format!(
+                        crate::internal::color::red(&format!(
                             "Failed to verify installation of {}: {}",
                             pkg, e
                         ))
@@ -134,7 +134,7 @@ fn seed_managed_with_desired_installed(
     Ok(changed)
 }
 
-fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domain::state::PackageState) {
+fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::core::state::PackageState) {
     if to_remove.is_empty() {
         return;
     }
@@ -144,13 +144,13 @@ fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domai
         for package in to_remove {
             println!(
                 "  {} Would remove: {}",
-                crate::infrastructure::color::red("remove"),
-                crate::infrastructure::color::yellow(package)
+                crate::internal::color::red("remove"),
+                crate::internal::color::yellow(package)
             );
         }
         println!(
             "  {} Would remove {} package(s)",
-            crate::infrastructure::color::blue("ℹ"),
+            crate::internal::color::blue("ℹ"),
             to_remove.len()
         );
         return;
@@ -160,15 +160,15 @@ fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domai
     if !crate::cli::ui::confirm_remove_operation(to_remove) {
         println!(
             "  {}",
-            crate::infrastructure::color::blue("Package removal cancelled")
+            crate::internal::color::blue("Package removal cancelled")
         );
         return;
     }
 
-    if let Err(e) = crate::domain::package::remove_unmanaged_packages(to_remove, true) {
+    if let Err(e) = crate::core::package::remove_unmanaged_packages(to_remove, true) {
         eprintln!(
             "{}",
-            crate::infrastructure::color::red(&format!("Failed to remove packages: {}", e))
+            crate::internal::color::red(&format!("Failed to remove packages: {}", e))
         );
         return;
     }
@@ -179,10 +179,7 @@ fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domai
     }
 
     if let Err(e) = state.save() {
-        eprintln!(
-            "{}",
-            crate::infrastructure::color::red(&format!("Failed to update package state: {}", e))
-        );
+        eprintln!("{}", crate::internal::color::red(&format!("Failed to update package state: {}", e)));
     }
 }
 
@@ -194,7 +191,7 @@ fn run_combined_package_operations(
     _dotfile_count: usize,
     _env_var_count: usize,
     dry_run: bool,
-    config: &crate::domain::config::Config,
+    config: &crate::core::config::Config,
 ) {
     // First, handle uninstalled packages
     let (repo_to_install, aur_to_install) = categorize_install_sets(to_install);
@@ -217,14 +214,14 @@ fn run_combined_package_operations(
         if !aur_to_install.is_empty() {
             println!(
                 "  {} AUR packages to install: {}",
-                crate::infrastructure::color::yellow(&aur_to_install.len().to_string()),
+                crate::internal::color::yellow(&aur_to_install.len().to_string()),
                 aur_to_install.join(", ")
             );
         }
         if !aur_to_update.is_empty() {
             println!(
                 "  {} AUR packages to update: {}",
-                crate::infrastructure::color::yellow(&aur_to_update.len().to_string()),
+                crate::internal::color::yellow(&aur_to_update.len().to_string()),
                 aur_to_update.join(", ")
             );
         }
@@ -251,12 +248,12 @@ fn categorize_install_sets(to_install: &[String]) -> (Vec<String>, Vec<String>) 
     if to_install.is_empty() {
         return (Vec::new(), Vec::new());
     }
-    match crate::domain::package::categorize_packages(to_install) {
+    match crate::core::package::categorize_packages(to_install) {
         Ok(result) => result,
         Err(e) => {
             eprintln!(
                 "{}",
-                crate::infrastructure::color::red(&format!("Failed to categorize packages: {}", e))
+                crate::internal::color::red(&format!("Failed to categorize packages: {}", e))
             );
             (Vec::new(), Vec::new())
         }
@@ -272,7 +269,7 @@ fn compute_aur_updates(dry_run: bool) -> Vec<String> {
         Err(e) => {
             eprintln!(
                 "{}",
-                crate::infrastructure::color::red(&format!("Failed to check AUR updates: {}", e))
+            crate::internal::color::red(&format!("Failed to check AUR updates: {}", e))
             );
             Vec::new()
         }
@@ -285,18 +282,18 @@ fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
     }
     println!(
         "  {} repo packages found: {}",
-        crate::infrastructure::color::yellow(&repo_to_install.len().to_string()),
+        crate::internal::color::yellow(&repo_to_install.len().to_string()),
         repo_to_install.join(", ")
     );
     if dry_run {
         println!(
             "  {} Would install {} from official repositories",
-            crate::infrastructure::color::blue("ℹ"),
+            crate::internal::color::blue("ℹ"),
             repo_to_install.join(", ")
         );
     } else {
-        if let Err(e) = crate::domain::pm::ParuPacman::new().install_repo(repo_to_install) {
-            eprintln!("{}", crate::infrastructure::color::red(&e));
+        if let Err(e) = crate::core::pm::ParuPacman::new().install_repo(repo_to_install) {
+            eprintln!("{}", crate::internal::color::red(&e));
         }
     }
 }
@@ -311,25 +308,25 @@ fn handle_aur_operations(
         if dry_run {
             println!(
                 "  {} Would install/update {} from AUR",
-                crate::infrastructure::color::blue("ℹ"),
+                crate::internal::color::blue("ℹ"),
                 all_aur_packages.join(", ")
             );
             return;
         }
         if !aur_to_install.is_empty() {
-            if let Err(e) = crate::domain::pm::ParuPacman::new().install_aur(aur_to_install) {
-                eprintln!("{}", crate::infrastructure::color::red(&e));
+            if let Err(e) = crate::core::pm::ParuPacman::new().install_aur(aur_to_install) {
+                eprintln!("{}", crate::internal::color::red(&e));
             }
         }
         if !aur_to_update.is_empty() {
-            if let Err(e) = crate::domain::pm::ParuPacman::new().update_aur(aur_to_update) {
-                eprintln!("{}", crate::infrastructure::color::red(&e));
+            if let Err(e) = crate::core::pm::ParuPacman::new().update_aur(aur_to_update) {
+                eprintln!("{}", crate::internal::color::red(&e));
             }
         }
     } else {
         println!(
             "  {}",
-            crate::infrastructure::color::blue("AUR package operations cancelled")
+            crate::internal::color::blue("AUR package operations cancelled")
         );
     }
 }
@@ -338,14 +335,14 @@ fn update_repo_packages(dry_run: bool) {
     if dry_run {
         println!(
             "  {} Would update official repository packages",
-            crate::infrastructure::color::blue("ℹ")
+            crate::internal::color::blue("ℹ")
         );
         return;
     }
-    if let Err(err) = crate::domain::pm::ParuPacman::new().update_repo() {
+    if let Err(err) = crate::core::pm::ParuPacman::new().update_repo() {
         eprintln!(
             "{}",
-            crate::infrastructure::color::red(&format!("Repo update failed: {}", err))
+            crate::internal::color::red(&format!("Repo update failed: {}", err))
         );
     }
 }
@@ -357,28 +354,28 @@ fn update_repo_packages(dry_run: bool) {
 // update_aur_packages removed in favor of PackageManager::update_aur
 
 /// Apply dotfile synchronization
-fn apply_dotfiles_with_config(config: &crate::domain::config::Config, dry_run: bool) {
+fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run: bool) {
     // Config is provided from earlier analysis
 
     // Get dotfile mappings from config
-    let mappings = crate::domain::dotfiles::get_dotfile_mappings(config);
+    let mappings = crate::core::dotfiles::get_dotfile_mappings(config);
 
     // Show section header
     println!();
-    println!("[{}]", crate::infrastructure::color::green("config"));
+    println!("[{}]", crate::internal::color::green("config"));
 
     if mappings.is_empty() {
-        println!("  {} No dotfiles configured", crate::infrastructure::color::blue("ℹ"));
+        println!("  {} No dotfiles configured", crate::internal::color::blue("ℹ"));
         return;
     }
 
     // Check if any actions are needed
-    let has_actions = match crate::domain::dotfiles::has_actionable_dotfiles(&mappings) {
+    let has_actions = match crate::core::dotfiles::has_actionable_dotfiles(&mappings) {
         Ok(has) => has,
         Err(err) => {
             eprintln!(
                 "{}",
-            crate::infrastructure::color::red(&format!("Failed to analyze dotfiles: {}", err))
+            crate::internal::color::red(&format!("Failed to analyze dotfiles: {}", err))
             );
             return;
         }
@@ -387,25 +384,25 @@ fn apply_dotfiles_with_config(config: &crate::domain::config::Config, dry_run: b
     if !has_actions {
         println!(
             "  {} Up to date: {} dotfiles",
-            crate::infrastructure::color::green("➔"),
+            crate::internal::color::green("➔"),
             mappings.len()
         );
         return;
     }
 
     // Analyze and apply dotfiles
-    let actions = match crate::domain::dotfiles::apply_dotfiles(&mappings, dry_run) {
+    let actions = match crate::core::dotfiles::apply_dotfiles(&mappings, dry_run) {
         Ok(actions) => actions,
         Err(err) => {
             eprintln!(
                 "{}",
-                crate::infrastructure::color::red(&format!("Failed to apply dotfiles: {}", err))
+                crate::internal::color::red(&format!("Failed to apply dotfiles: {}", err))
             );
             return;
         }
     };
 
-    crate::domain::dotfiles::print_actions(&actions, dry_run);
+    crate::core::dotfiles::print_actions(&actions, dry_run);
 }
 
 /// Run the apply command to update packages and system
@@ -414,13 +411,13 @@ pub fn run(dry_run: bool) {
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
-            crate::infrastructure::color::blue("ℹ")
+            crate::internal::color::blue("ℹ")
         );
         println!();
     }
 
     // Perform analysis with spinner
-    let analysis_result = crate::infrastructure::util::run_with_spinner(analyze_system, "Analyzing system configuration");
+    let analysis_result = crate::internal::util::run_with_spinner(analyze_system, "Analyzing system configuration");
 
     let (
         package_count,
@@ -442,7 +439,7 @@ pub fn run(dry_run: bool) {
     let to_install: Vec<String> = actions
         .iter()
         .filter_map(|action| match action {
-            crate::domain::package::PackageAction::Install { name } => Some(name.clone()),
+            crate::core::package::PackageAction::Install { name } => Some(name.clone()),
             _ => None,
         })
         .collect();
@@ -450,7 +447,7 @@ pub fn run(dry_run: bool) {
     let to_remove: Vec<String> = actions
         .iter()
         .filter_map(|action| match action {
-            crate::domain::package::PackageAction::Remove { name } => Some(name.clone()),
+            crate::core::package::PackageAction::Remove { name } => Some(name.clone()),
             _ => None,
         })
         .collect();
@@ -483,7 +480,7 @@ pub fn run(dry_run: bool) {
     if !dry_run {
         let mut changed = false;
         for pkg in &to_install {
-            match crate::domain::package::is_package_installed(pkg) {
+            match crate::core::package::is_package_installed(pkg) {
                 Ok(true) => {
                     if !state.is_managed(pkg) {
                         state.add_managed(pkg.clone());
@@ -494,7 +491,7 @@ pub fn run(dry_run: bool) {
                 Err(e) => {
                     eprintln!(
                         "{}",
-                        crate::infrastructure::color::red(&format!(
+                        crate::internal::color::red(&format!(
                             "Failed to verify installation of {}: {}",
                             pkg, e
                         ))
@@ -507,7 +504,7 @@ pub fn run(dry_run: bool) {
             if let Err(e) = state.save() {
                 eprintln!(
                     "{}",
-                    crate::infrastructure::color::red(&format!("Failed to save package state: {}", e))
+                    crate::internal::color::red(&format!("Failed to save package state: {}", e))
                 );
             }
         }
@@ -515,10 +512,11 @@ pub fn run(dry_run: bool) {
 }
 
 /// Handle system section (services + environment variables)
-fn handle_system_section_with_config(config: &crate::domain::config::Config, dry_run: bool) {
+fn handle_system_section_with_config(config: &crate::core::config::Config, dry_run: bool) {
+    // no-op placeholder kept for potential future use
 
     // Check if we have services or environment variables
-    let services = crate::domain::services::get_configured_services(&config);
+    let services = crate::core::services::get_configured_services(&config);
     let env_var_count = count_environment_variables(&config);
 
     if services.is_empty() && env_var_count == 0 {
@@ -527,21 +525,21 @@ fn handle_system_section_with_config(config: &crate::domain::config::Config, dry
 
     // Show section header
     println!();
-    println!("[{}]", crate::infrastructure::color::red("system"));
+    println!("[{}]", crate::internal::color::red("system"));
 
     // Handle services first
     if !services.is_empty() {
         if dry_run {
-            println!("  {} Plan:", crate::infrastructure::color::blue("ℹ"));
+            println!("  {} Plan:", crate::internal::color::blue("ℹ"));
             for service in &services {
                 println!(
                     "    ✓ Would manage {} (system) [enable, start]",
-                    crate::infrastructure::color::yellow(service)
+                    crate::internal::color::yellow(service)
                 );
             }
             println!(
                 "  {} Planned {} service(s)",
-                crate::infrastructure::color::blue("ℹ"),
+                crate::internal::color::blue("ℹ"),
                 services.len()
             );
             println!();
@@ -549,26 +547,26 @@ fn handle_system_section_with_config(config: &crate::domain::config::Config, dry
             // Use spinner for service validation
             let spinner_msg = format!("Validating {} services...", services.len());
             let services_clone = services.clone();
-            let result = match crate::infrastructure::util::run_with_spinner(
-                move || crate::domain::services::ensure_services_configured(&services_clone),
+            let result = match crate::internal::util::run_with_spinner(
+                move || crate::core::services::ensure_services_configured(&services_clone),
                 &spinner_msg,
             ) {
                 Ok(result) => result,
                 Err(err) => {
                     eprintln!(
                         "{}",
-                        crate::infrastructure::color::red(&format!("Failed to configure services: {}", err))
+                        crate::internal::color::red(&format!("Failed to configure services: {}", err))
                     );
                     return;
                 }
             };
 
             if result.changed {
-                println!("  {} Services configured", crate::infrastructure::color::green("⸎"));
+                println!("  {} Services configured", crate::internal::color::green("⸎"));
                 println!();
                 println!(
                     "  {} Managed {} service(s)",
-                    crate::infrastructure::color::green("⸎"),
+                    crate::internal::color::green("⸎"),
                     services.len()
                 );
 
@@ -581,28 +579,28 @@ fn handle_system_section_with_config(config: &crate::domain::config::Config, dry
                 if !result.failed_services.is_empty() {
                     println!(
                         "    {} Failed: {}",
-                        crate::infrastructure::color::red("✗"),
+                        crate::internal::color::red("✗"),
                         result.failed_services.join(", ")
                     );
                 }
                 println!();
             } else {
-                println!("  {} Service state verified", crate::infrastructure::color::green("⸎"));
+                println!("  {} Service state verified", crate::internal::color::green("⸎"));
             }
         }
     }
 
     // Handle environment variables
     if env_var_count > 0 {
-        match crate::domain::env::handle_environment_combined(&config, dry_run) {
+        match crate::core::env::handle_environment_combined(&config, dry_run) {
             Ok(()) => {}
             Err(e) => {
                 eprintln!(
                     "{}",
-                    crate::infrastructure::color::red(&format!("Environment handling failed: {}", e))
+                    crate::internal::color::red(&format!("Environment handling failed: {}", e))
                 );
             }
         }
     }
 }
-use crate::domain::pm::PackageManager;
+use crate::core::pm::PackageManager;

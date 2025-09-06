@@ -10,7 +10,7 @@ const SPINNER_FRAMES: &[&str] = &["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘
 fn spinner_print_frame(message: &str, frame_index: usize) {
     print!(
         "\r\x1b[2K  {} {}...",
-        crate::infrastructure::color::blue(SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]),
+        crate::internal::color::blue(SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]),
         message
     );
     io::stdout().flush().ok();
@@ -56,7 +56,7 @@ pub fn run_command_with_spinner(
             }
             Ok(None) => {
                 // Still running, continue
-                std::thread::sleep(Duration::from_millis(crate::infrastructure::constants::SPINNER_DELAY_MS));
+                std::thread::sleep(Duration::from_millis(crate::internal::constants::SPINNER_DELAY_MS));
                 i += 1;
             }
             Err(e) => {
@@ -118,7 +118,7 @@ pub fn run_command_with_spinner_capture(
             }
             Ok(None) => {
                 std::thread::sleep(Duration::from_millis(
-                    crate::infrastructure::constants::SPINNER_DELAY_MS,
+                    crate::internal::constants::SPINNER_DELAY_MS,
                 ));
                 i += 1;
             }
@@ -162,7 +162,7 @@ where
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // Operation still running, continue spinning
-                thread::sleep(Duration::from_millis(crate::infrastructure::constants::SPINNER_DELAY_MS));
+                thread::sleep(Duration::from_millis(crate::internal::constants::SPINNER_DELAY_MS));
                 i += 1;
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {

@@ -1,9 +1,9 @@
-use crate::infrastructure::color as colo;
+use crate::internal::color as colo;
 
 pub fn run(items: &[String], all: bool) {
     // Determine target packages to adopt
     let targets: Vec<String> = if all {
-        match crate::domain::config::Config::load_all_relevant_config_files() {
+        match crate::core::config::Config::load_all_relevant_config_files() {
             Ok(cfg) => cfg.packages.keys().cloned().collect(),
             Err(e) => {
                 eprintln!("{}", colo::red(&format!("Failed to load config: {}", e)));
@@ -19,7 +19,7 @@ pub fn run(items: &[String], all: bool) {
         return;
     }
 
-    let mut state = match crate::domain::state::PackageState::load() {
+    let mut state = match crate::core::state::PackageState::load() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{}", colo::red(&format!("Failed to load state: {}", e)));
@@ -36,7 +36,7 @@ pub fn run(items: &[String], all: bool) {
             skipped_already.push(pkg);
             continue;
         }
-        match crate::domain::package::is_package_installed(&pkg) {
+        match crate::core::package::is_package_installed(&pkg) {
             Ok(true) => {
                 state.add_managed(pkg.clone());
                 adopted.push(pkg);
@@ -76,4 +76,3 @@ pub fn run(items: &[String], all: bool) {
         );
     }
 }
-

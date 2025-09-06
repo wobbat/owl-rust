@@ -11,10 +11,10 @@ pub fn run(items: &[String], _search_mode: bool) {
 
 /// Search and select mode - add to config instead of installing
 fn run_search_mode(terms: &[String]) {
-    match crate::domain::package::search_packages(terms) {
+    match crate::core::package::search_packages(terms) {
         Ok(results) => {
             if results.is_empty() {
-                println!("{}", crate::infrastructure::color::yellow("No packages found matching the search terms"));
+                println!("{}", crate::internal::color::yellow("No packages found matching the search terms"));
                 return;
             }
 
@@ -28,7 +28,7 @@ fn run_search_mode(terms: &[String]) {
                     }
                 }
                 None => {
-                    println!("{}", crate::infrastructure::color::yellow("No package selected"));
+                    println!("{}", crate::internal::color::yellow("No package selected"));
                 }
             }
         }
@@ -42,34 +42,34 @@ fn run_search_mode(terms: &[String]) {
 
 /// Display search results in a formatted way
 // use crate::domain::package; // no direct uses
-use crate::domain::pm::{PackageSource, SearchResult};
+use crate::core::pm::{PackageSource, SearchResult};
 fn display_search_results(results: &[SearchResult]) {
     println!("\n{} {} package(s):\n",
-        crate::infrastructure::color::bold("Found"),
+        crate::internal::color::bold("Found"),
         results.len());
 
     for (i, result) in results.iter().enumerate() {
         let num_str = number_brackets((results.len() - 1 - i) as i32);
-        let name = crate::infrastructure::color::highlight(&result.name);
-        let version = crate::infrastructure::color::success(&result.ver);
+        let name = crate::internal::color::highlight(&result.name);
+        let version = crate::internal::color::success(&result.ver);
 
         let tag = match result.source {
             PackageSource::Aur => {
-                crate::infrastructure::color::warning(&format!("[{}]", result.repo))
+                crate::internal::color::warning(&format!("[{}]", result.repo))
             }
             PackageSource::Repo => {
-                crate::infrastructure::color::repository(&format!("[{}]", result.repo))
+                crate::internal::color::repository(&format!("[{}]", result.repo))
             }
         };
 
         let status = if result.installed {
-            format!(" {}", crate::infrastructure::color::success("installed"))
+            format!(" {}", crate::internal::color::success("installed"))
         } else {
             String::new()
         };
 
         let desc = if !result.description.is_empty() {
-            format!(" - {}", crate::infrastructure::color::description(&result.description))
+            format!(" - {}", crate::internal::color::description(&result.description))
         } else {
             String::new()
         };
@@ -104,7 +104,7 @@ fn prompt_package_selection(results: &[SearchResult]) -> Option<String> {
                 return Some(results[index].name.clone());
             }
             _ => {
-                println!("{}", crate::infrastructure::color::red("Invalid selection. Please try again."));
+                println!("{}", crate::internal::color::red("Invalid selection. Please try again."));
             }
         }
     }
@@ -123,14 +123,14 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
         // Use main config if no relevant files found
         let main_config = get_main_config_path()?;
         add_package_to_file(package_name, &main_config)?;
-        println!("{}", crate::infrastructure::color::success(&format!("Added '{}' to {}", package_name, main_config)));
+        println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, main_config)));
         return Ok(());
     }
 
     if config_files.len() == 1 {
         let file_path = &config_files[0];
         add_package_to_file(package_name, file_path)?;
-        println!("{}", crate::infrastructure::color::success(&format!("Added '{}' to {}", package_name, file_path)));
+        println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, file_path)));
         return Ok(());
     }
 
@@ -139,13 +139,13 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
 
     // Multiple files - prompt for selection
     println!("\n{} {} config file(s):\n",
-        crate::infrastructure::color::bold("Found"),
+        crate::internal::color::bold("Found"),
         config_files.len());
 
     for (i, file) in config_files.iter().enumerate() {
         let num_str = number_brackets((config_files.len() - 1 - i) as i32);
         let friendly = file.replace(&std::env::var("HOME").unwrap_or_default(), "~");
-        println!("{} {}", num_str, crate::infrastructure::color::highlight(&friendly));
+        println!("{} {}", num_str, crate::internal::color::highlight(&friendly));
     }
     println!();
 
@@ -154,11 +154,11 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
         Some(index) => {
             let file_path = &config_files[index];
             add_package_to_file(package_name, file_path)?;
-            println!("{}", crate::infrastructure::color::success(&format!("Added '{}' to {}", package_name, file_path)));
+            println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, file_path)));
             Ok(())
         }
         None => {
-            println!("{}", crate::infrastructure::color::yellow("No config file selected"));
+            println!("{}", crate::internal::color::yellow("No config file selected"));
             Ok(())
         }
     }
@@ -169,22 +169,22 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
 fn get_relevant_config_files() -> Result<Vec<String>, String> {
     let home = std::env::var("HOME")
         .map_err(|_| "HOME environment variable not set".to_string())?;
-    let owl_dir = format!("{}/{}", home, crate::infrastructure::constants::OWL_DIR);
+    let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
 
     let mut files = Vec::new();
 
     // Check main config
-    let main_config = format!("{}/main{}", owl_dir, crate::infrastructure::constants::OWL_EXT);
+    let main_config = format!("{}/main{}", owl_dir, crate::internal::constants::OWL_EXT);
     if std::path::Path::new(&main_config).exists() {
         files.push(main_config);
     }
 
     // Scan all files in hosts directory
-    let hosts_dir = format!("{}/{}", owl_dir, crate::infrastructure::constants::HOSTS_DIR);
+    let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
     if let Ok(entries) = std::fs::read_dir(&hosts_dir) {
         for entry in entries.flatten() {
             if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::infrastructure::constants::OWL_EXT) {
+                if path.ends_with(crate::internal::constants::OWL_EXT) {
                     files.push(path.to_string());
                 }
             }
@@ -192,11 +192,11 @@ fn get_relevant_config_files() -> Result<Vec<String>, String> {
     }
 
     // Scan all files in groups directory
-    let groups_dir = format!("{}/{}", owl_dir, crate::infrastructure::constants::GROUPS_DIR);
+    let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
     if let Ok(entries) = std::fs::read_dir(&groups_dir) {
         for entry in entries.flatten() {
             if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::infrastructure::constants::OWL_EXT) {
+                if path.ends_with(crate::internal::constants::OWL_EXT) {
                     files.push(path.to_string());
                 }
             }
@@ -212,8 +212,8 @@ fn get_main_config_path() -> Result<String, String> {
     let home = std::env::var("HOME")
         .map_err(|_| "HOME environment variable not set".to_string())?;
     let path = PathBuf::from(home)
-        .join(crate::infrastructure::constants::OWL_DIR)
-        .join(crate::infrastructure::constants::MAIN_CONFIG_FILE);
+        .join(crate::internal::constants::OWL_DIR)
+        .join(crate::internal::constants::MAIN_CONFIG_FILE);
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -289,7 +289,7 @@ fn prompt_file_selection(count: usize) -> Option<usize> {
                 return Some(index);
             }
             _ => {
-                println!("{}", crate::infrastructure::color::red("Invalid selection. Please try again."));
+                println!("{}", crate::internal::color::red("Invalid selection. Please try again."));
             }
         }
     }
