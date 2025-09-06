@@ -76,6 +76,36 @@ fn hash_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hash_bytes))
 }
 
+fn files_differ_quick(src: &Path, dest: &Path) -> Result<bool, String> {
+    let src_meta = fs::metadata(src)
+        .map_err(|e| format!("Failed to stat {}: {}", src.display(), e))?;
+    let dst_meta = fs::metadata(dest)
+        .map_err(|e| format!("Failed to stat {}: {}", dest.display(), e))?;
+
+    // If sizes differ, definitely different
+    if src_meta.len() != dst_meta.len() {
+        return Ok(true);
+    }
+
+    // If mtimes match and sizes match, assume equal (fast path)
+    let src_time = src_meta.modified().ok();
+    let dst_time = dst_meta.modified().ok();
+    if let (Some(st), Some(dt)) = (src_time, dst_time) {
+        if st == dt {
+            return Ok(false);
+        }
+    }
+
+    // Otherwise, confirm by hashing
+    let source_hash = hash_file(src)?;
+    let dest_hash = hash_file(dest)?;
+    if source_hash.is_empty() || dest_hash.is_empty() {
+        // fall back to treating as different if hash failed
+        return Ok(true);
+    }
+    Ok(source_hash != dest_hash)
+}
+
 /// Calculate SHA256 hash of a directory recursively
 fn hash_directory(path: &Path) -> Result<String, String> {
     if !path.exists() || !path.is_dir() {
@@ -186,18 +216,32 @@ pub fn analyze_dotfiles(mappings: &[DotfileMapping]) -> Result<Vec<DotfileAction
             continue;
         }
 
-        // Compare hashes to see if content differs
-        let source_hash = hash_path(&source_path)?;
-        let dest_hash = hash_path(&dest_path)?;
-
-        if source_hash.is_empty() || dest_hash.is_empty() {
-            action.status = DotfileStatus::Conflict;
-            action.reason = Some("failed to calculate hash".to_string());
-        } else if source_hash != dest_hash {
-            action.status = DotfileStatus::Update;
+        // For files, do a quick metadata compare then hash if needed
+        if !source_is_dir {
+            match files_differ_quick(&source_path, &dest_path) {
+                Ok(true) => action.status = DotfileStatus::Update,
+                Ok(false) => {
+                    action.status = DotfileStatus::UpToDate;
+                    action.reason = Some("content matches".to_string());
+                }
+                Err(e) => {
+                    action.status = DotfileStatus::Conflict;
+                    action.reason = Some(format!("failed to compare: {}", e));
+                }
+            }
         } else {
-            action.status = DotfileStatus::UpToDate;
-            action.reason = Some("content matches".to_string());
+            // Directories: compute full content hash as before
+            let source_hash = hash_path(&source_path)?;
+            let dest_hash = hash_path(&dest_path)?;
+            if source_hash.is_empty() || dest_hash.is_empty() {
+                action.status = DotfileStatus::Conflict;
+                action.reason = Some("failed to calculate hash".to_string());
+            } else if source_hash != dest_hash {
+                action.status = DotfileStatus::Update;
+            } else {
+                action.status = DotfileStatus::UpToDate;
+                action.reason = Some("content matches".to_string());
+            }
         }
 
         actions.push(action);

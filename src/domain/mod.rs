@@ -4,3 +4,4 @@ pub mod package;
 pub mod dotfiles;
 pub mod services;
 pub mod env;
+pub mod pm;

@@ -25,6 +25,14 @@ pub const HOSTS_DIR: &str = "hosts";
 pub const GROUPS_DIR: &str = "groups";
 pub const OWL_EXT: &str = ".owl";
 
+// Config filenames
+// MAIN_CONFIG_BASENAME removed; use MAIN_CONFIG_FILE directly
+pub const MAIN_CONFIG_FILE: &str = "main.owl";
+
+// Environment filenames under ~/.owl
+pub const ENV_BASH_FILE: &str = "env.sh";
+pub const ENV_FISH_FILE: &str = "env.fish";
+
 // State management paths
 pub const STATE_DIR: &str = ".state";
 pub const UNTRACKED_STATE: &str = "untracked.json";

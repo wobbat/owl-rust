@@ -11,7 +11,7 @@ pub fn run(items: &[String], _search_mode: bool) {
 
 /// Search and select mode - add to config instead of installing
 fn run_search_mode(terms: &[String]) {
-    match crate::domain::package::search_packages_paru(terms) {
+    match crate::domain::package::search_packages(terms) {
         Ok(results) => {
             if results.is_empty() {
                 println!("{}", crate::infrastructure::color::yellow("No packages found matching the search terms"));
@@ -41,8 +41,9 @@ fn run_search_mode(terms: &[String]) {
 
 
 /// Display search results in a formatted way
-use crate::domain::package;
-fn display_search_results(results: &[package::SearchResult]) {
+// use crate::domain::package; // no direct uses
+use crate::domain::pm::{PackageSource, SearchResult};
+fn display_search_results(results: &[SearchResult]) {
     println!("\n{} {} package(s):\n",
         crate::infrastructure::color::bold("Found"),
         results.len());
@@ -53,10 +54,10 @@ fn display_search_results(results: &[package::SearchResult]) {
         let version = crate::infrastructure::color::success(&result.ver);
 
         let tag = match result.source {
-            package::PackageSource::Aur => {
+            PackageSource::Aur => {
                 crate::infrastructure::color::warning(&format!("[{}]", result.repo))
             }
-            package::PackageSource::Repo => {
+            PackageSource::Repo => {
                 crate::infrastructure::color::repository(&format!("[{}]", result.repo))
             }
         };
@@ -80,7 +81,7 @@ fn display_search_results(results: &[package::SearchResult]) {
 }
 
 /// Prompt user to select a package from search results
-fn prompt_package_selection(results: &[package::SearchResult]) -> Option<String> {
+fn prompt_package_selection(results: &[SearchResult]) -> Option<String> {
     if results.is_empty() {
         return None;
     }
@@ -207,9 +208,13 @@ fn get_relevant_config_files() -> Result<Vec<String>, String> {
 
 /// Get the main config file path
 fn get_main_config_path() -> Result<String, String> {
+    use std::path::PathBuf;
     let home = std::env::var("HOME")
         .map_err(|_| "HOME environment variable not set".to_string())?;
-    Ok(format!("{}/main{}", home + "/" + crate::infrastructure::constants::OWL_DIR, crate::infrastructure::constants::OWL_EXT))
+    let path = PathBuf::from(home)
+        .join(crate::infrastructure::constants::OWL_DIR)
+        .join(crate::infrastructure::constants::MAIN_CONFIG_FILE);
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Add a package to a config file

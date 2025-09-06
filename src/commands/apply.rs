@@ -1,33 +1,6 @@
 /// Get list of AUR packages that can be updated
 fn get_aur_updates() -> Result<Vec<String>, String> {
-    use std::process::Command;
-
-    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
-        .arg("-Qua")
-        .output()
-        .map_err(|e| format!("Failed to check AUR updates: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let packages: Vec<String> = stdout
-            .lines()
-            .filter_map(|line| {
-                // paru -Qua output format: "package-name old-version -> new-version"
-                line.split_whitespace().next().map(|s| s.to_string())
-            })
-            .collect();
-        Ok(packages)
-    } else {
-        // paru -Qua exits with code 1 when no AUR updates available
-        if output.status.code() == Some(1) {
-            Ok(vec![])
-        } else {
-            Err(format!(
-                "AUR update check failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ))
-        }
-    }
+    crate::domain::pm::ParuPacman::new().get_aur_updates()
 }
 
 /// Count packages that have dotfile configurations
@@ -61,17 +34,42 @@ type Analysis = (
 );
 
 fn analyze_system() -> Result<Analysis, String> {
-    // Get package count
-    let package_count = crate::domain::package::get_package_count()
+    use std::thread;
+
+    // Run independent, potentially slow operations in parallel
+    // 1) Count upgradable packages
+    let count_handle = thread::spawn(|| crate::domain::package::get_package_count());
+    // 2) Load config files
+    let config_handle = thread::spawn(|| {
+        crate::domain::config::Config::load_all_relevant_config_files()
+            .map_err(|e| e.to_string())
+    });
+    // 3) Load package state from disk
+    let state_handle = thread::spawn(|| crate::domain::state::PackageState::load());
+    // 4) Prewarm installed package cache to avoid repeated -Q calls later
+    let installed_warm_handle = thread::spawn(|| {
+        let _ = crate::domain::package::get_installed_packages();
+        Ok::<(), String>(())
+    });
+
+    // Join results
+    let package_count = count_handle
+        .join()
+        .map_err(|_| "Failed to join package count thread".to_string())?
         .map_err(|e| format!("Failed to get package count: {}", e))?;
 
-    // Load configuration
-    let config = crate::domain::config::Config::load_all_relevant_config_files()
+    let mut state = state_handle
+        .join()
+        .map_err(|_| "Failed to join state loader thread".to_string())?
+        .map_err(|e| format!("Failed to load package state: {}", e))?;
+
+    let config = config_handle
+        .join()
+        .map_err(|_| "Failed to join config loader thread".to_string())?
         .map_err(|e| format!("Failed to load config: {}", e))?;
 
-    // Load package state
-    let mut state = crate::domain::state::PackageState::load()
-        .map_err(|e| format!("Failed to load package state: {}", e))?;
+    // Ensure installed cache warm-up finished (best-effort)
+    let _ = installed_warm_handle.join();
 
     // Seed managed state with currently installed packages that are present in config.
     // This ensures future removals are detected only for packages user explicitly managed via config.
@@ -196,6 +194,7 @@ fn run_combined_package_operations(
     _dotfile_count: usize,
     _env_var_count: usize,
     dry_run: bool,
+    config: &crate::domain::config::Config,
 ) {
     // First, handle uninstalled packages
     let (repo_to_install, aur_to_install) = categorize_install_sets(to_install);
@@ -242,10 +241,10 @@ fn run_combined_package_operations(
     update_repo_packages(dry_run);
 
     // Apply dotfile synchronization
-    apply_dotfiles(dry_run);
+    apply_dotfiles_with_config(config, dry_run);
 
     // Handle system section (services + environment)
-    handle_system_section(dry_run);
+    handle_system_section_with_config(config, dry_run);
 }
 
 fn categorize_install_sets(to_install: &[String]) -> (Vec<String>, Vec<String>) {
@@ -296,7 +295,9 @@ fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
             repo_to_install.join(", ")
         );
     } else {
-        install_packages(repo_to_install, "official repositories");
+        if let Err(e) = crate::domain::pm::ParuPacman::new().install_repo(repo_to_install) {
+            eprintln!("{}", crate::infrastructure::color::red(&e));
+        }
     }
 }
 
@@ -316,10 +317,14 @@ fn handle_aur_operations(
             return;
         }
         if !aur_to_install.is_empty() {
-            install_packages(aur_to_install, "AUR");
+            if let Err(e) = crate::domain::pm::ParuPacman::new().install_aur(aur_to_install) {
+                eprintln!("{}", crate::infrastructure::color::red(&e));
+            }
         }
         if !aur_to_update.is_empty() {
-            update_aur_packages(aur_to_update);
+            if let Err(e) = crate::domain::pm::ParuPacman::new().update_aur(aur_to_update) {
+                eprintln!("{}", crate::infrastructure::color::red(&e));
+            }
         }
     } else {
         println!(
@@ -337,130 +342,26 @@ fn update_repo_packages(dry_run: bool) {
         );
         return;
     }
-    let repo_status = match crate::infrastructure::util::run_command_with_spinner(
-        crate::infrastructure::constants::PACKAGE_MANAGER,
-        &["--repo", "-Syu", "--noconfirm"],
-        "Updating official repository packages (syncing databases and upgrading packages)",
-    ) {
-        Ok(status) => status,
-        Err(err) => {
-            eprintln!(
-                "{}",
-                crate::infrastructure::color::red(&format!("Repo update failed: {}", err))
-            );
-            return;
-        }
-    };
-
-    if repo_status.success() {
-        println!("  {} Official repos synced", crate::infrastructure::color::green("⸎"));
-    } else if repo_status.code() == Some(1) {
-            println!(
-                "  {} Packages from main repos have been updated",
-                crate::infrastructure::color::green("⸎")
-            );
-    } else {
+    if let Err(err) = crate::domain::pm::ParuPacman::new().update_repo() {
         eprintln!(
-            "  {} Repository update failed (exit code: {:?})",
-            crate::infrastructure::color::red("✗"),
-            repo_status.code()
+            "{}",
+            crate::infrastructure::color::red(&format!("Repo update failed: {}", err))
         );
     }
 }
 
 /// Install packages from a specific source
-fn install_packages(packages: &[String], source: &str) {
-    let mut args = vec!["-S", "--noconfirm"];
-    args.extend(packages.iter().map(|s| s.as_str()));
-
-    // Run package installation with spinner and capture stderr
-    let (status, stderr_out) = match crate::infrastructure::util::run_command_with_spinner_capture(
-        crate::infrastructure::constants::PACKAGE_MANAGER,
-        &args,
-        &format!("Installing from {}", source),
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            eprintln!("{}", crate::infrastructure::color::red(&err));
-            return; // Don't exit, just return to continue with the rest of the apply command
-        }
-    };
-
-    if status.success() {
-        println!(
-            "\r\x1b[2K  {} Package installation from {} completed",
-            crate::infrastructure::color::green("⸎"),
-            source
-        );
-    } else {
-        eprintln!("{}", crate::infrastructure::color::red("package installation failed"));
-        let err = stderr_out.trim();
-        if !err.is_empty() {
-            let lines: Vec<&str> = err.lines().collect();
-            let take = 30usize;
-            let start = lines.len().saturating_sub(take);
-            for line in &lines[start..] {
-                eprintln!("  {}", line);
-            }
-        }
-        // Don't exit here so we can continue with the rest of the apply command
-    }
-}
+// install_packages replaced by PackageManager::install_repo/install_aur
 
 /// Update AUR packages
-fn update_aur_packages(packages: &[String]) {
-    let mut args = vec!["--aur", "-Syu", "--noconfirm"];
-    args.extend(packages.iter().map(|s| s.as_str()));
-
-    // Run AUR update with spinner and capture stderr
-    let (status, stderr_out) = match crate::infrastructure::util::run_command_with_spinner_capture(
-        crate::infrastructure::constants::PACKAGE_MANAGER,
-        &args,
-        "Updating AUR packages",
-    ) {
-        Ok(result) => result,
-        Err(err) => {
-            eprintln!("{}", crate::infrastructure::color::red(&err));
-            return; // Don't exit, just return to continue with the rest of the apply command
-        }
-    };
-
-    if status.success() {
-        println!(
-            "\r\x1b[2K  {} AUR package updates completed",
-            crate::infrastructure::color::green("⸎")
-        );
-    } else {
-        eprintln!("{}", crate::infrastructure::color::red("AUR package update failed"));
-        let err = stderr_out.trim();
-        if !err.is_empty() {
-            let lines: Vec<&str> = err.lines().collect();
-            let take = 30usize;
-            let start = lines.len().saturating_sub(take);
-            for line in &lines[start..] {
-                eprintln!("  {}", line);
-            }
-        }
-        // Don't exit here so we can continue with the rest of the apply command
-    }
-}
+// update_aur_packages removed in favor of PackageManager::update_aur
 
 /// Apply dotfile synchronization
-fn apply_dotfiles(dry_run: bool) {
-    // Load configuration
-    let config = match crate::domain::config::Config::load_all_relevant_config_files() {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!(
-                "{}",
-                crate::infrastructure::color::red(&format!("Failed to load config: {}", err))
-            );
-            return;
-        }
-    };
+fn apply_dotfiles_with_config(config: &crate::domain::config::Config, dry_run: bool) {
+    // Config is provided from earlier analysis
 
     // Get dotfile mappings from config
-    let mappings = crate::domain::dotfiles::get_dotfile_mappings(&config);
+    let mappings = crate::domain::dotfiles::get_dotfile_mappings(config);
 
     // Show section header
     println!();
@@ -523,7 +424,7 @@ pub fn run(dry_run: bool) {
 
     let (
         package_count,
-        _config,
+        config,
         mut state,
         actions,
         dotfile_count,
@@ -575,6 +476,7 @@ pub fn run(dry_run: bool) {
         dotfile_count,
         env_var_count,
         dry_run,
+        &config,
     );
 
     // After operations, mark newly installed packages as managed (only if installed by our tool)
@@ -613,21 +515,7 @@ pub fn run(dry_run: bool) {
 }
 
 /// Handle system section (services + environment variables)
-fn handle_system_section(dry_run: bool) {
-    // Load configuration
-    let config = match crate::domain::config::Config::load_all_relevant_config_files() {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!(
-                "{}",
-                crate::infrastructure::color::red(&format!(
-                    "Failed to load config for system section: {}",
-                    err
-                ))
-            );
-            return;
-        }
-    };
+fn handle_system_section_with_config(config: &crate::domain::config::Config, dry_run: bool) {
 
     // Check if we have services or environment variables
     let services = crate::domain::services::get_configured_services(&config);
@@ -717,3 +605,4 @@ fn handle_system_section(dry_run: bool) {
         }
     }
 }
+use crate::domain::pm::PackageManager;

@@ -144,12 +144,22 @@ impl PackageState {
         self.managed.retain(|p| p != package);
     }
 
-    /// Get the state directory path
-    fn get_state_dir() -> Result<PathBuf, String> {
+    /// Resolve user's home directory
+    fn resolve_home_dir() -> Result<PathBuf, String> {
+        #[cfg(test)]
+        {
+            if let Some(p) = TEST_HOME_DIR.lock().unwrap().clone() {
+                return Ok(p);
+            }
+        }
         let home = std::env::var("HOME")
             .map_err(|_| "HOME environment variable not set".to_string())?;
+        Ok(PathBuf::from(home))
+    }
 
-        Ok(PathBuf::from(home)
+    /// Get the state directory path
+    fn get_state_dir() -> Result<PathBuf, String> {
+        Ok(Self::resolve_home_dir()?
             .join(constants::OWL_DIR)
             .join(constants::STATE_DIR))
     }
@@ -256,28 +266,42 @@ impl PackageState {
 }
 
 #[cfg(test)]
+static TEST_HOME_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+pub(crate) fn test_set_home_dir<P: AsRef<std::path::Path>>(p: P) {
+    *TEST_HOME_DIR.lock().unwrap() = Some(p.as_ref().to_path_buf());
+}
+
+#[cfg(test)]
+pub(crate) fn test_clear_home_dir() {
+    *TEST_HOME_DIR.lock().unwrap() = None;
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
 
-    fn setup_test_env() -> (tempfile::TempDir, PathBuf, Option<String>) {
+    static HOME_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn setup_test_env() -> (tempfile::TempDir, PathBuf, std::sync::MutexGuard<'static, ()>) {
+        // Serialize HOME mutations across tests in this module
+        let guard = HOME_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let temp_dir = tempdir().unwrap();
         let owl_dir = temp_dir.path().join(".owl");
         let state_dir = owl_dir.join(".state");
 
-        // Save original HOME and set to temp directory for tests
-        let original_home = env::var("HOME").ok();
-        unsafe {
-            env::set_var("HOME", temp_dir.path());
-        }
+        // Point code under test to this temp directory without touching real HOME
+        super::test_set_home_dir(temp_dir.path());
 
-        (temp_dir, state_dir, original_home)
+        (temp_dir, state_dir, guard)
     }
 
     #[test]
     fn test_load_initial_state() {
-        let (_temp_dir, _state_dir, original_home) = setup_test_env();
+        let (_temp_dir, _state_dir, _guard) = setup_test_env();
 
         let state = PackageState::load().unwrap();
 
@@ -292,17 +316,12 @@ mod tests {
         // Managed should be empty initially
         assert!(state.managed.is_empty());
 
-        // Restore original HOME
-        if let Some(home) = original_home {
-            unsafe {
-                env::set_var("HOME", home);
-            }
-        }
+        super::test_clear_home_dir();
     }
 
     #[test]
     fn test_add_remove_untracked() {
-        let (_temp_dir, _state_dir, original_home) = setup_test_env();
+        let (_temp_dir, _state_dir, _guard) = setup_test_env();
 
         let mut state = PackageState::load().unwrap();
 
@@ -312,17 +331,12 @@ mod tests {
         state.remove_untracked("test-package");
         assert!(!state.is_untracked("test-package"));
 
-        // Restore original HOME
-        if let Some(home) = original_home {
-            unsafe {
-                env::set_var("HOME", home);
-            }
-        }
+        super::test_clear_home_dir();
     }
 
     #[test]
     fn test_add_remove_hidden() {
-        let (_temp_dir, _state_dir, original_home) = setup_test_env();
+        let (_temp_dir, _state_dir, _guard) = setup_test_env();
 
         let mut state = PackageState::load().unwrap();
 
@@ -332,17 +346,12 @@ mod tests {
         state.remove_hidden("hidden-package");
         assert!(!state.is_hidden("hidden-package"));
 
-        // Restore original HOME
-        if let Some(home) = original_home {
-            unsafe {
-                env::set_var("HOME", home);
-            }
-        }
+        super::test_clear_home_dir();
     }
 
     #[test]
     fn test_save_and_load() {
-        let (_temp_dir, _state_dir, original_home) = setup_test_env();
+        let (_temp_dir, _state_dir, _guard) = setup_test_env();
 
         let mut state = PackageState::load().unwrap();
         state.add_untracked("custom-package".to_string());
@@ -356,11 +365,6 @@ mod tests {
         assert!(loaded_state.is_hidden("hidden-package"));
         assert!(loaded_state.is_managed("managed-package"));
 
-        // Restore original HOME
-        if let Some(home) = original_home {
-            unsafe {
-                env::set_var("HOME", home);
-            }
-        }
+        super::test_clear_home_dir();
     }
 }

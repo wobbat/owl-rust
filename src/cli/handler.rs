@@ -4,7 +4,7 @@ use crate::infrastructure::constants;
 
 /// Global options for the CLI
 #[derive(Debug, Clone)]
-pub struct Global {
+pub struct GlobalFlags {
     pub verbose: bool,
     pub dry_run: bool,
 }
@@ -23,8 +23,8 @@ pub enum Command {
 
 /// Parsed command line options
 #[derive(Debug, Clone)]
-pub struct Opts {
-    pub global: Global,
+pub struct CliOptions {
+    pub global: GlobalFlags,
     pub cmd: Command,
 }
 
@@ -190,7 +190,7 @@ fn ensure_no_args(args: &[String], message: &str) -> Result<(), crate::error::Ow
 }
 
 /// Execute the parsed command
-pub fn execute_command(opts: &Opts) {
+pub fn execute_command(opts: &CliOptions) {
     if opts.global.verbose {
         println!("{}", colo::dim("[verbose] args parsed"));
     }
@@ -230,8 +230,8 @@ pub fn parse_and_execute(args: Vec<String>) {
             std::process::exit(1);
         }
     };
-    let opts = Opts {
-        global: Global { verbose, dry_run },
+    let opts = CliOptions {
+        global: GlobalFlags { verbose, dry_run },
         cmd,
     };
     execute_command(&opts);

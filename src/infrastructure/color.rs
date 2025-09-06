@@ -1,7 +1,5 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-
+ 
 fn colorize(s: &str, code: &str) -> String {
     format!("\x1b[{}m{}\x1b[0m", code, s)
 }

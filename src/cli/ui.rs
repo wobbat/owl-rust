@@ -1,6 +1,30 @@
 use crate::infrastructure::color as colo;
 use std::io::Write;
 
+fn confirm_operation(
+    packages: &[String],
+    header_icon: &str,
+    header_text: &str,
+    detail_label: &str,
+    prompt: &str,
+) -> bool {
+    println!("\n  {} {}", colo::red(header_icon), header_text);
+    println!(
+        "  {} {}: {}",
+        colo::yellow(&packages.len().to_string()),
+        detail_label,
+        packages.join(", ")
+    );
+    print!("  -> {} ", prompt);
+    std::io::stdout().flush().ok();
+
+    let mut input = String::new();
+    match std::io::stdin().read_line(&mut input) {
+        Ok(_) => matches!(input.trim().to_lowercase().as_str(), "y" | "yes"),
+        Err(_) => false,
+    }
+}
+
 /// Generate the apply command output display with uninstalled package count
 pub fn generate_apply_output_with_install(
     package_count: usize,
@@ -50,49 +74,28 @@ pub fn generate_apply_output_with_install(
 
 /// Prompt user for AUR package confirmation
 pub fn confirm_aur_operation(packages: &[String], operation: &str) -> bool {
-    println!(
-        "\n  {} AUR packages require confirmation",
-        colo::red("‼")
-    );
-    println!(
-        "  {} AUR packages found: {}",
-        colo::yellow(&packages.len().to_string()),
-        packages.join(", ")
-    );
     let verb = match operation {
         "installing" => "install",
         "updating" => "update",
         "installing/updating" => "install and/or update",
         _ => operation.trim_end_matches("ing"),
     };
-    print!("  -> Are you sure you wanna {} AUR packages? (y/N): ", verb);
-    std::io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    match std::io::stdin().read_line(&mut input) {
-        Ok(_) => matches!(input.trim().to_lowercase().as_str(), "y" | "yes"),
-        Err(_) => false,
-    }
+    confirm_operation(
+        packages,
+        "‼",
+        "AUR packages require confirmation",
+        "AUR packages found",
+        &format!("Are you sure you wanna {} AUR packages? (y/N):", verb),
+    )
 }
 
 /// Prompt user for removal confirmation
 pub fn confirm_remove_operation(packages: &[String]) -> bool {
-    use std::io::Write;
-    println!(
-        "\n  {} Package removals require confirmation",
-        colo::red("‼")
-    );
-    println!(
-        "  {} packages to remove: {}",
-        colo::yellow(&packages.len().to_string()),
-        packages.join(", ")
-    );
-    print!("  -> Are you sure you want to remove these packages? (y/N): ");
-    std::io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    match std::io::stdin().read_line(&mut input) {
-        Ok(_) => matches!(input.trim().to_lowercase().as_str(), "y" | "yes"),
-        Err(_) => false,
-    }
+    confirm_operation(
+        packages,
+        "‼",
+        "Package removals require confirmation",
+        "packages to remove",
+        "Are you sure you want to remove these packages? (y/N):",
+    )
 }

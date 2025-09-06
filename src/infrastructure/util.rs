@@ -4,14 +4,29 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+// Shared spinner frames so all spinners look consistent
+const SPINNER_FRAMES: &[&str] = &["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
+
+fn spinner_print_frame(message: &str, frame_index: usize) {
+    print!(
+        "\r\x1b[2K  {} {}...",
+        crate::infrastructure::color::blue(SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]),
+        message
+    );
+    io::stdout().flush().ok();
+}
+
+fn spinner_clear_line() {
+    print!("\r\x1b[2K");
+    io::stdout().flush().ok();
+}
+
 /// Run a command with a spinner showing progress
 pub fn run_command_with_spinner(
     command: &str,
     args: &[&str],
     message: &str,
 ) -> Result<std::process::ExitStatus, String> {
-    let spinner_chars = ["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
-
     let mut child = Command::new(command)
         .args(args)
         .stdout(Stdio::piped())
@@ -30,15 +45,13 @@ pub fn run_command_with_spinner(
     let mut i = 0;
     loop {
         let current_msg = current_status.lock().unwrap().clone();
-        print!("\r\x1b[2K  {} {}...", crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]), current_msg);
-        io::stdout().flush().unwrap();
+        spinner_print_frame(&current_msg, i);
 
         // Check if process is done
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Clear spinner line
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 return Ok(status);
             }
             Ok(None) => {
@@ -47,8 +60,7 @@ pub fn run_command_with_spinner(
                 i += 1;
             }
             Err(e) => {
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 return Err(format!("Failed to wait for command: {}", e));
             }
         }
@@ -61,8 +73,6 @@ pub fn run_command_with_spinner_capture(
     args: &[&str],
     message: &str,
 ) -> Result<(std::process::ExitStatus, String), String> {
-    let spinner_chars = ["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
-
     let mut child = Command::new(command)
         .args(args)
         .stdout(Stdio::piped())
@@ -98,18 +108,12 @@ pub fn run_command_with_spinner_capture(
     let mut i = 0;
     let exit_status = loop {
         let current_msg = current_status.lock().unwrap().clone();
-        print!(
-            "\r\x1b[2K  {} {}...",
-            crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]),
-            current_msg
-        );
-        io::stdout().flush().unwrap();
+        spinner_print_frame(&current_msg, i);
 
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Clear spinner line
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 break status;
             }
             Ok(None) => {
@@ -119,8 +123,7 @@ pub fn run_command_with_spinner_capture(
                 i += 1;
             }
             Err(e) => {
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 return Err(format!("Failed to wait for command: {}", e));
             }
         }
@@ -136,8 +139,6 @@ where
     F: FnOnce() -> Result<T, String> + Send + 'static,
     T: Send + 'static,
 {
-    let spinner_chars = ["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
-
     // Channel to communicate result from operation thread
     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -150,15 +151,13 @@ where
     // Animate spinner in main thread
     let mut i = 0;
     loop {
-        print!("\r\x1b[2K  {} {}...", crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]), message);
-        io::stdout().flush().unwrap();
+        spinner_print_frame(message, i);
 
         // Check if operation is done
         match rx.try_recv() {
             Ok(result) => {
                 // Clear spinner line
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 return result;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -168,8 +167,7 @@ where
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 // Operation thread panicked or ended unexpectedly
-                print!("\r\x1b[2K");
-                io::stdout().flush().unwrap();
+                spinner_clear_line();
                 return Err("Operation thread ended unexpectedly".to_string());
             }
         }

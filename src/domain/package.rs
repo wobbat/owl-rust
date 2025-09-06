@@ -1,33 +1,27 @@
 //! Package management utilities
 
-use std::process::Command;
+// std::process::Command no longer used here
 use std::collections::HashSet;
+use std::sync::OnceLock;
+use crate::domain::pm::{PackageManager, ParuPacman, SearchResult};
 use crate::domain::config::Config;
 use crate::domain::state::PackageState;
 
-/// Package source types
-#[derive(Debug, Clone, PartialEq)]
-pub enum PackageSource {
-    Repo,
-    Aur,
-}
-
-/// Search result from package search
-#[derive(Debug, Clone)]
-pub struct SearchResult {
-    pub name: String,
-    pub ver: String,
-    pub source: PackageSource,
-    pub repo: String,
-    pub description: String,
-    pub installed: bool,
-}
+// SearchResult and PackageSource provided by pm module
 
 /// Package action types for planning installations and removals
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageAction {
     Install { name: String },
     Remove { name: String },
+}
+
+// Cache of installed packages for the current process run
+static INSTALLED_CACHE: OnceLock<HashSet<String>> = OnceLock::new();
+static PACKAGE_COUNT_CACHE: OnceLock<usize> = OnceLock::new();
+
+fn query_installed_packages() -> Result<HashSet<String>, String> {
+    ParuPacman::new().list_installed()
 }
 
 /// Plan package actions by comparing desired config with installed packages
@@ -64,25 +58,11 @@ pub fn plan_package_actions(
 
 /// Get list of all installed packages
 pub fn get_installed_packages() -> Result<HashSet<String>, String> {
-    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
-        .arg("-Q")
-        .output()
-        .map_err(|e| format!("Failed to get installed packages: {}", e))?;
-
-    if !output.status.success() {
-        return Err(format!("Package manager failed: {}",
-            String::from_utf8_lossy(&output.stderr)));
+    if let Some(cached) = INSTALLED_CACHE.get() {
+        return Ok(cached.clone());
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut installed = HashSet::new();
-
-    for line in stdout.lines() {
-        if let Some(package_name) = line.split_whitespace().next() {
-            installed.insert(package_name.to_string());
-        }
-    }
-
+    let installed = query_installed_packages()?;
+    let _ = INSTALLED_CACHE.set(installed.clone());
     Ok(installed)
 }
 
@@ -100,28 +80,7 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
         );
     }
 
-    let mut cmd = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER);
-    cmd.arg("-Rns"); // Remove with dependencies, no save
-
-    if quiet {
-        cmd.arg("--noconfirm");
-    }
-
-    cmd.args(packages);
-
-    let status = cmd.status()
-        .map_err(|e| format!("Failed to remove packages: {}", e))?;
-
-    if !status.success() {
-        return Err("Package removal failed".to_string());
-    }
-
-    println!("  {} Removed {} package(s)",
-        crate::infrastructure::color::green("✓"),
-        packages.len()
-    );
-
-    Ok(())
+    ParuPacman::new().remove_packages(packages, quiet)
 }
 
 // Removed unused install_packages helper; apply handles install/update paths
@@ -130,25 +89,14 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
 
 /// Get the count of packages that can be upgraded
 pub fn get_package_count() -> Result<usize, String> {
-    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
-        .arg("-Qu")
-        .output()
-        .map_err(|e| format!("Failed to run {} -Qu: {}", crate::infrastructure::constants::PACKAGE_MANAGER, e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let line_count = stdout.lines().count();
-        Ok(line_count)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // paru -Qu exits with code 1 when there are no packages to upgrade
-        // This is normal behavior, so treat it as 0 packages
-        if output.status.code() == Some(1) && stderr.trim().is_empty() {
-            Ok(0)
-        } else {
-            Err(format!("{} -Qu failed: {}", crate::infrastructure::constants::PACKAGE_MANAGER, stderr))
-        }
+    if let Some(cached) = PACKAGE_COUNT_CACHE.get() {
+        return Ok(*cached);
     }
+
+    let count = ParuPacman::new().upgrade_count()?;
+
+    let _ = PACKAGE_COUNT_CACHE.set(count);
+    Ok(count)
 }
 
 // Removed unused update_packages helper to reduce dead code
@@ -172,13 +120,15 @@ pub fn get_package_count() -> Result<usize, String> {
 /// }
 /// ```
 pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
-    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
-        .arg("-Q")
-        .arg(package_name)
-        .output()
-        .map_err(|e| format!("Failed to run {} -Q {}: {}", crate::infrastructure::constants::PACKAGE_MANAGER, package_name, e))?;
-
-    Ok(output.status.success())
+    // Prefer cached set if available to avoid per-package calls
+    if let Some(cached) = INSTALLED_CACHE.get() {
+        return Ok(cached.contains(package_name));
+    }
+    // Populate cache on first check
+    let installed = query_installed_packages()?;
+    let contains = installed.contains(package_name);
+    let _ = INSTALLED_CACHE.set(installed);
+    Ok(contains)
 }
 
 #[cfg(test)]
@@ -222,58 +172,14 @@ mod tests {
         assert!(aur_packages.contains(&"nonexistentpackage12345".to_string()));
     }
 
-    #[test]
-    fn test_parse_paru_search_output() {
-        let sample_output = r#"aur/jet-bin 0.7.27-1 [+5 ~0.00]
-    CLI to transform between JSON, EDN and Transit, powered with a minimal query language.
-aur/clang-opencl-headers-minimal-git 21.0.0_r537041.f2e62cfca5e5-1 [+5 ~0.00]
-    clang headers & include files for OpenCL, trunk version
-extra/texlive-latexextra 2025.2-2 [29.63 MiB 95.69 MiB] (texlive)
-    TeX Live - LaTeX additional packages
-extra/nim 2.0.8-1 [13.08 MiB 58.55 MiB]
-    Imperative, multi-paradigm, compiled programming language"#;
-
-        let results = parse_paru_search_output(sample_output).unwrap();
-        assert_eq!(results.len(), 4);
-
-        // Test first result (AUR package)
-        assert_eq!(results[0].name, "jet-bin");
-        assert_eq!(results[0].repo, "aur");
-        assert_eq!(results[0].source, PackageSource::Aur);
-        assert_eq!(results[0].ver, "0.7.27-1");
-        assert!(results[0].description.contains("CLI to transform"));
-
-        // Test third result (Official repo package)
-        assert_eq!(results[2].name, "texlive-latexextra");
-        assert_eq!(results[2].repo, "extra");
-        assert_eq!(results[2].source, PackageSource::Repo);
-    }
-
-    #[test]
-    fn test_parse_repo_name() {
-        assert_eq!(parse_repo_name("aur/package-name").unwrap(), ("aur", "package-name"));
-        assert_eq!(parse_repo_name("extra/bash").unwrap(), ("extra", "bash"));
-        assert!(parse_repo_name("invalid-format").is_err());
-    }
-
-    #[test]
-    fn test_is_header_line() {
-        assert!(is_header_line("aur/jet-bin 0.7.27-1 [+5 ~0.00]"));
-        assert!(is_header_line("extra/texlive-latexextra 2025.2-2 [29.63 MiB 95.69 MiB] (texlive)"));
-        assert!(!is_header_line("    Description line"));
-        assert!(!is_header_line("[some other format]"));
-    }
+    // parser tests moved to pm.rs
 }
 
 /// Determine if a package is available in official repositories
+#[cfg(test)]
 pub fn is_repo_package(package_name: &str) -> Result<bool, String> {
-    let output = Command::new("pacman")
-        .arg("-Si")
-        .arg(package_name)
-        .output()
-        .map_err(|e| format!("Failed to check package info: {}", e))?;
-
-    Ok(output.status.success())
+    let set = ParuPacman::new().batch_repo_available(&[package_name.to_string()])?;
+    Ok(set.contains(package_name))
 }
 
 /// Categorize packages into repo and AUR lists
@@ -282,151 +188,22 @@ pub fn categorize_packages(packages: &[String]) -> Result<(Vec<String>, Vec<Stri
         return Ok((Vec::new(), Vec::new()));
     }
 
-    // Use parallel processing for repo checks
-    use rayon::prelude::*;
-
-    let results: Result<Vec<(Option<String>, Option<String>)>, String> = packages
-        .par_iter()
-        .map(|package| {
-            match is_repo_package(package) {
-                Ok(true) => Ok((Some(package.clone()), None)),
-                Ok(false) => Ok((None, Some(package.clone()))),
-                Err(e) => Err(format!("Failed to check {}: {}", package, e)),
-            }
-        })
-        .collect();
-
-    let categorized = results?;
-    let (repo_packages, aur_packages): (Vec<String>, Vec<String>) = categorized
-        .into_iter()
-        .fold((Vec::new(), Vec::new()), |(mut repos, mut aurs), (repo, aur)| {
-            if let Some(r) = repo {
-                repos.push(r);
-            }
-            if let Some(a) = aur {
-                aurs.push(a);
-            }
-            (repos, aurs)
-        });
-
+    let available = ParuPacman::new().batch_repo_available(packages)?;
+    let mut repo_packages = Vec::new();
+    let mut aur_packages = Vec::new();
+    for p in packages {
+        if available.contains(p) {
+            repo_packages.push(p.clone());
+        } else {
+            aur_packages.push(p.clone());
+        }
+    }
     Ok((repo_packages, aur_packages))
 }
 
-/// Search packages using paru -Ss --bottomup
-pub fn search_packages_paru(terms: &[String]) -> Result<Vec<SearchResult>, String> {
-    if terms.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let output = run_paru_search(terms)?;
-    parse_paru_search_output(&output)
-}
-
-/// Execute paru search command
-fn run_paru_search(terms: &[String]) -> Result<String, String> {
-    let mut cmd = Command::new("paru");
-    cmd.args(["-Ss", "--bottomup"]);
-    cmd.args(terms);
-
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to run paru search: {}", e))?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Paru search failed: {}", stderr))
-    }
-}
-
-/// Parse paru search output into SearchResult structs
-fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
-    let mut results = Vec::new();
-    let mut current_result: Option<SearchResult> = None;
-
-    for line in output.lines() {
-        let original_line = line;
-        let trimmed_line = line.trim();
-        if trimmed_line.is_empty() {
-            continue;
-        }
-
-        // Check for header lines: repo/name version [flags]
-        if is_header_line(trimmed_line) {
-            // Flush previous result
-            if let Some(result) = current_result.take() {
-                results.push(result);
-            }
-
-            current_result = Some(parse_header_line(trimmed_line)?);
-        } else if original_line.starts_with("    ") {
-            // Description lines are indented with 4 spaces
-            if let Some(ref mut result) = current_result {
-                let desc_part = trimmed_line;
-                if result.description.is_empty() {
-                    result.description = desc_part.to_string();
-                } else {
-                    // Handle multi-line descriptions
-                    result.description.push(' ');
-                    result.description.push_str(desc_part);
-                }
-            }
-        }
-    }
-
-    // Don't forget the last result
-    if let Some(result) = current_result {
-        results.push(result);
-    }
-
-    Ok(results)
-}
-
-/// Check if a line is a header line (repo/name version format)
-fn is_header_line(line: &str) -> bool {
-    // Contains "/" and " ", doesn't start with " " or "[", and contains a repo/name pattern
-    line.contains('/') && line.contains(' ') &&
-    !line.starts_with(' ') && !line.starts_with('[') &&
-    line.split_whitespace().next().unwrap_or("").contains('/')
-}
-
-/// Parse a header line into a SearchResult
-fn parse_header_line(line: &str) -> Result<SearchResult, String> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err("Empty header line".to_string());
-    }
-
-    // First part should be "repo/name"
-    let repo_name_part = parts[0];
-    let (repo, name) = parse_repo_name(repo_name_part)?;
-
-    // Second part is version
-    let version = parts.get(1)
-        .ok_or("Missing version in header line")?;
-
-    // Check for installed status
-    let installed = line.contains("[installed]");
-
-    Ok(SearchResult {
-        name: name.to_string(),
-        ver: version.to_string(),
-        source: if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo },
-        repo: repo.to_string(),
-        description: String::new(),
-        installed,
-    })
-}
-
-/// Parse "repo/name" into (repo, name)
-fn parse_repo_name(repo_name: &str) -> Result<(&str, &str), String> {
-    if let Some(slash_pos) = repo_name.find('/') {
-        let repo = &repo_name[..slash_pos];
-        let name = &repo_name[slash_pos + 1..];
-        Ok((repo, name))
-    } else {
-        Err(format!("Invalid repo/name format: {}", repo_name))
-    }
+/// Search packages using the PackageManager
+pub fn search_packages(terms: &[String]) -> Result<Vec<SearchResult>, String> {
+    ParuPacman::new().search_packages(terms)
 }
 
 // Removed unused run_package_command helper

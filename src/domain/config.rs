@@ -231,7 +231,7 @@ impl Config {
         // Load in priority order: main (highest), hostname (medium), groups (lowest)
 
         // 1. Load main config (highest priority)
-        let main_config_path = owl_root.join("main.owl");
+        let main_config_path = owl_root.join(crate::infrastructure::constants::MAIN_CONFIG_FILE);
         if main_config_path.exists() {
             Self::load_config_if_exists(&mut config, &main_config_path)?;
         }
@@ -311,6 +311,19 @@ impl Config {
         // Replace global env vars (higher priority wins)
         self.env_vars.extend(other.env_vars);
     }
+}
+
+/// Return list of packages declared in config that are not installed
+#[cfg(test)]
+pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> {
+    let installed = crate::domain::package::get_installed_packages()?;
+    let mut missing = Vec::new();
+    for name in config.packages.keys() {
+        if !installed.contains(name) {
+            missing.push(name.clone());
+        }
+    }
+    Ok(missing)
 }
 
 fn print_config(config: &Config, title: &str) {

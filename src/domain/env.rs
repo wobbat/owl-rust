@@ -1,31 +1,29 @@
 use std::collections::HashMap;
+use std::env as std_env;
 use std::fs;
 use std::path::Path;
-use std::env as std_env;
 
 /// Get the Owl directory path
 fn owl_dir() -> Result<std::path::PathBuf, String> {
-    let home = std_env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home = std_env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     Ok(Path::new(&home).join(".owl"))
 }
 
 /// Get bash environment file path
 fn env_file_bash() -> Result<std::path::PathBuf, String> {
-    Ok(owl_dir()?.join("env.sh"))
+    Ok(owl_dir()?.join(crate::infrastructure::constants::ENV_BASH_FILE))
 }
 
 /// Get fish environment file path
 fn env_file_fish() -> Result<std::path::PathBuf, String> {
-    Ok(owl_dir()?.join("env.fish"))
+    Ok(owl_dir()?.join(crate::infrastructure::constants::ENV_FISH_FILE))
 }
 
 /// Ensure Owl directories exist
 fn ensure_owl_directories() -> Result<(), String> {
     let dir = owl_dir()?;
     if !dir.exists() {
-        fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create Owl directory: {}", e))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create Owl directory: {}", e))?;
     }
     Ok(())
 }
@@ -120,51 +118,57 @@ pub fn compare_env_vars(new_envs: &[(String, String)]) -> EnvComparison {
     result
 }
 
-/// Write bash environment file
-fn write_env_bash(envs: &[(String, String)]) -> Result<(), String> {
-    let mut content = "#!/bin/bash\n".to_string();
-    content.push_str("# This file is managed by Owl package manager\n");
-    content.push_str("# Manual changes may be overwritten\n");
+enum ShellStyle {
+    Bash,
+    Fish,
+}
 
-    if !envs.is_empty() {
-        content.push('\n');
-        for env in envs {
-            let key = &env.0;
-            let value = &env.1;
-            // Escape single quotes in bash
-            let escaped = value.replace("'", "'\\''");
-            content.push_str(&format!("export {}='{}'\n", key, escaped));
+fn render_env_content(envs: &[(String, String)], style: ShellStyle) -> String {
+    match style {
+        ShellStyle::Bash => {
+            let mut content = String::from("#!/bin/bash\n");
+            content.push_str("# This file is managed by Owl package manager\n");
+            content.push_str("# Manual changes may be overwritten\n");
+            if !envs.is_empty() {
+                content.push('\n');
+                for (key, value) in envs {
+                    let escaped = value.replace("'", "'\\''");
+                    content.push_str(&format!("export {}='{}'\n", key, escaped));
+                }
+            }
+            content
+        }
+        ShellStyle::Fish => {
+            let mut content = String::from("# This file is managed by Owl package manager\n");
+            content.push_str("# Manual changes may be overwritten");
+            if !envs.is_empty() {
+                content.push_str("\n\n");
+                for (key, value) in envs {
+                    let escaped = value.replace("'", "\\'");
+                    content.push_str(&format!("set -x {} '{}'\n", key, escaped));
+                }
+            }
+            content
         }
     }
+}
 
-    let bash_file = env_file_bash()?;
-    fs::write(&bash_file, content)
-        .map_err(|e| format!("Failed to write bash environment file: {}", e))?;
+fn write_env_file(path: &Path, envs: &[(String, String)], style: ShellStyle) -> Result<(), String> {
+    let content = render_env_content(envs, style);
+    fs::write(path, content)
+        .map_err(|e| format!("Failed to write environment file {}: {}", path.display(), e))
+}
 
-    Ok(())
+/// Write bash environment file
+fn write_env_bash(envs: &[(String, String)]) -> Result<(), String> {
+    let path = env_file_bash()?;
+    write_env_file(&path, envs, ShellStyle::Bash)
 }
 
 /// Write fish environment file
 fn write_env_fish(envs: &[(String, String)]) -> Result<(), String> {
-    let mut content = "# This file is managed by Owl package manager\n".to_string();
-    content.push_str("# Manual changes may be overwritten");
-
-    if !envs.is_empty() {
-        content.push_str("\n\n");
-        for env in envs {
-            let key = &env.0;
-            let value = &env.1;
-            // Escape single quotes in fish
-            let escaped = value.replace("'", "\\'");
-            content.push_str(&format!("set -x {} '{}'\n", key, escaped));
-        }
-    }
-
-    let fish_file = env_file_fish()?;
-    fs::write(&fish_file, content)
-        .map_err(|e| format!("Failed to write fish environment file: {}", e))?;
-
-    Ok(())
+    let path = env_file_fish()?;
+    write_env_file(&path, envs, ShellStyle::Fish)
 }
 
 /// Set environment variables by writing both shell files
@@ -198,7 +202,10 @@ pub fn collect_all_env_vars(config: &crate::domain::config::Config) -> Vec<(Stri
 // Removed unused handle_environment; environment is handled via handle_environment_combined
 
 /// Handle environment variables combined with system section (no separate header)
-pub fn handle_environment_combined(config: &crate::domain::config::Config, dry_run: bool) -> Result<(), String> {
+pub fn handle_environment_combined(
+    config: &crate::domain::config::Config,
+    dry_run: bool,
+) -> Result<(), String> {
     let all_env_vars = collect_all_env_vars(config);
     if all_env_vars.is_empty() {
         return Ok(());
@@ -217,10 +224,14 @@ pub fn handle_environment_combined(config: &crate::domain::config::Config, dry_r
 
 /// Show environment dry-run content (without header)
 fn show_environment_dry_run_content(env_vars: &[(String, String)]) {
-    println!("  {} Environment variables to set:", crate::infrastructure::color::blue("ℹ"));
+    println!(
+        "  {} Environment variables to set:",
+        crate::infrastructure::color::blue("ℹ")
+    );
 
     for (key, value) in env_vars {
-        println!("    {} Would set: {}={}",
+        println!(
+            "    {} Would set: {}={}",
             crate::infrastructure::color::blue("✓"),
             crate::infrastructure::color::yellow(key),
             crate::infrastructure::color::green(value)
@@ -232,7 +243,8 @@ fn show_environment_dry_run_content(env_vars: &[(String, String)]) {
 pub fn show_environment_changes_content(comparison: &EnvComparison) {
     if !comparison.added.is_empty() {
         for (key, value) in &comparison.added {
-            println!("  {} Set: {}={}",
+            println!(
+                "  {} Set: {}={}",
                 crate::infrastructure::color::green("➔"),
                 crate::infrastructure::color::yellow(key),
                 crate::infrastructure::color::green(value)
@@ -242,7 +254,8 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
 
     if !comparison.updated.is_empty() {
         for (key, value) in &comparison.updated {
-            println!("  {} Updated: {}={}",
+            println!(
+                "  {} Updated: {}={}",
                 crate::infrastructure::color::green("➔"),
                 crate::infrastructure::color::yellow(key),
                 crate::infrastructure::color::green(value)
@@ -252,22 +265,26 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
 
     if !comparison.removed.is_empty() {
         for key in &comparison.removed {
-            println!("  {} Removed: {}",
+            println!(
+                "  {} Removed: {}",
                 crate::infrastructure::color::green("➔"),
                 crate::infrastructure::color::yellow(key)
             );
         }
     }
 
-    if comparison.added.is_empty() && comparison.updated.is_empty() && comparison.removed.is_empty() {
+    if comparison.added.is_empty() && comparison.updated.is_empty() && comparison.removed.is_empty()
+    {
         if !comparison.unchanged.is_empty() {
-            println!("  {} Environment variables maintained ({} unchanged)",
+            println!(
+                "  {} Environment variables maintained ({} unchanged)",
                 crate::infrastructure::color::green("➔"),
                 crate::infrastructure::color::blue(&comparison.unchanged.len().to_string())
             );
         }
     } else if !comparison.unchanged.is_empty() {
-        println!("  {} ({} environment variables unchanged)",
+        println!(
+            "  {} ({} environment variables unchanged)",
             crate::infrastructure::color::dim(""),
             crate::infrastructure::color::blue(&comparison.unchanged.len().to_string())
         );
