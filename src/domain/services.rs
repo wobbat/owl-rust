@@ -38,7 +38,7 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
                 }
             }
             Err(err) => {
-                eprintln!("{}", crate::colo::red(&format!("Failed to configure service {}: {}", service, err)));
+                eprintln!("{}", crate::infrastructure::color::red(&format!("Failed to configure service {}: {}", service, err)));
                 failed_services.push(service.clone());
             }
         }
@@ -81,7 +81,7 @@ fn ensure_service_configured(service_name: &str) -> Result<(bool, bool), String>
 /// Check if a service is enabled
 fn is_service_enabled(service_name: &str) -> Result<bool, String> {
     let output = Command::new("systemctl")
-        .args(&["is-enabled", service_name])
+        .args(["is-enabled", service_name])
         .output()
         .map_err(|e| format!("Failed to check if service is enabled: {}", e))?;
 
@@ -98,7 +98,7 @@ fn is_service_enabled(service_name: &str) -> Result<bool, String> {
         "disabled" | "masked" => Ok(false),
         _ => {
             // If we can't determine the status, assume it's not enabled
-            eprintln!("{}", crate::colo::yellow(&format!("Warning: Unknown service enable status '{}' for {}", status, service_name)));
+            eprintln!("{}", crate::infrastructure::color::yellow(&format!("Warning: Unknown service enable status '{}' for {}", status, service_name)));
             Ok(false)
         }
     }
@@ -107,7 +107,7 @@ fn is_service_enabled(service_name: &str) -> Result<bool, String> {
 /// Check if a service is active (running)
 fn is_service_active(service_name: &str) -> Result<bool, String> {
     let output = Command::new("systemctl")
-        .args(&["is-active", service_name])
+        .args(["is-active", service_name])
         .output()
         .map_err(|e| format!("Failed to check if service is active: {}", e))?;
 
@@ -118,7 +118,7 @@ fn is_service_active(service_name: &str) -> Result<bool, String> {
 /// Enable a service
 fn enable_service(service_name: &str) -> Result<(), String> {
     let output = Command::new("systemctl")
-        .args(&["enable", service_name])
+        .args(["enable", service_name])
         .output()
         .map_err(|e| format!("Failed to enable service: {}", e))?;
 
@@ -133,7 +133,7 @@ fn enable_service(service_name: &str) -> Result<(), String> {
 /// Start a service
 fn start_service(service_name: &str) -> Result<(), String> {
     let output = Command::new("systemctl")
-        .args(&["start", service_name])
+        .args(["start", service_name])
         .output()
         .map_err(|e| format!("Failed to start service: {}", e))?;
 
@@ -146,7 +146,8 @@ fn start_service(service_name: &str) -> Result<(), String> {
 }
 
 /// Get all services defined in the configuration
-pub fn get_configured_services(config: &crate::config::Config) -> Vec<String> {
+use crate::domain::config;
+pub fn get_configured_services(config: &config::Config) -> Vec<String> {
     config.packages.values()
         .filter_map(|pkg| pkg.service.clone())
         .collect()
@@ -159,13 +160,12 @@ mod tests {
     #[test]
     fn test_get_configured_services() {
         use std::collections::HashMap;
-        use crate::config::{Config, Package};
+        use crate::domain::config::{Config, Package};
 
         let mut config = Config::new();
 
         // Add packages with services
         let pkg1 = Package {
-            name: "test1".to_string(),
             config: None,
             service: Some("service1".to_string()),
             env_vars: HashMap::new(),
@@ -173,7 +173,6 @@ mod tests {
         config.packages.insert("test1".to_string(), pkg1);
 
         let pkg2 = Package {
-            name: "test2".to_string(),
             config: None,
             service: None, // No service
             env_vars: HashMap::new(),
@@ -181,7 +180,6 @@ mod tests {
         config.packages.insert("test2".to_string(), pkg2);
 
         let pkg3 = Package {
-            name: "test3".to_string(),
             config: None,
             service: Some("service3".to_string()),
             env_vars: HashMap::new(),

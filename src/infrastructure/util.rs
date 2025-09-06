@@ -30,7 +30,7 @@ pub fn run_command_with_spinner(
     let mut i = 0;
     loop {
         let current_msg = current_status.lock().unwrap().clone();
-        print!("\r\x1b[2K  {} {}...", crate::colo::blue(spinner_chars[i % spinner_chars.len()]), current_msg);
+        print!("\r\x1b[2K  {} {}...", crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]), current_msg);
         io::stdout().flush().unwrap();
 
         // Check if process is done
@@ -43,7 +43,7 @@ pub fn run_command_with_spinner(
             }
             Ok(None) => {
                 // Still running, continue
-                std::thread::sleep(Duration::from_millis(crate::constants::SPINNER_DELAY_MS));
+                std::thread::sleep(Duration::from_millis(crate::infrastructure::constants::SPINNER_DELAY_MS));
                 i += 1;
             }
             Err(e) => {
@@ -53,6 +53,81 @@ pub fn run_command_with_spinner(
             }
         }
     }
+}
+
+/// Run a command with spinner and capture stderr for diagnostics
+pub fn run_command_with_spinner_capture(
+    command: &str,
+    args: &[&str],
+    message: &str,
+) -> Result<(std::process::ExitStatus, String), String> {
+    let spinner_chars = ["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
+
+    let mut child = Command::new(command)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {}: {}", command, e))?;
+
+    // Take stdout/stderr for reading
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let current_status = Arc::new(Mutex::new(message.to_string()));
+    let captured_stderr = Arc::new(Mutex::new(String::new()));
+
+    // Start readers
+    start_output_reader(stdout, Arc::clone(&current_status));
+
+    // Capture stderr fully for diagnostics
+    {
+        let captured_stderr = Arc::clone(&captured_stderr);
+        thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                let mut buf = captured_stderr.lock().unwrap();
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+        });
+    }
+
+    // Show spinner with dynamic status updates
+    let mut i = 0;
+    let exit_status = loop {
+        let current_msg = current_status.lock().unwrap().clone();
+        print!(
+            "\r\x1b[2K  {} {}...",
+            crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]),
+            current_msg
+        );
+        io::stdout().flush().unwrap();
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Clear spinner line
+                print!("\r\x1b[2K");
+                io::stdout().flush().unwrap();
+                break status;
+            }
+            Ok(None) => {
+                std::thread::sleep(Duration::from_millis(
+                    crate::infrastructure::constants::SPINNER_DELAY_MS,
+                ));
+                i += 1;
+            }
+            Err(e) => {
+                print!("\r\x1b[2K");
+                io::stdout().flush().unwrap();
+                return Err(format!("Failed to wait for command: {}", e));
+            }
+        }
+    };
+
+    let stderr_output = captured_stderr.lock().unwrap().clone();
+    Ok((exit_status, stderr_output))
 }
 
 /// Run an operation with a spinner showing progress
@@ -75,7 +150,7 @@ where
     // Animate spinner in main thread
     let mut i = 0;
     loop {
-        print!("\r\x1b[2K  {} {}...", crate::colo::blue(spinner_chars[i % spinner_chars.len()]), message);
+        print!("\r\x1b[2K  {} {}...", crate::infrastructure::color::blue(spinner_chars[i % spinner_chars.len()]), message);
         io::stdout().flush().unwrap();
 
         // Check if operation is done
@@ -88,7 +163,7 @@ where
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // Operation still running, continue spinning
-                thread::sleep(Duration::from_millis(crate::constants::SPINNER_DELAY_MS));
+                thread::sleep(Duration::from_millis(crate::infrastructure::constants::SPINNER_DELAY_MS));
                 i += 1;
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -111,7 +186,7 @@ fn start_output_reader(stdout: std::process::ChildStdout, status: Arc<Mutex<Stri
         for line in reader.lines().map_while(Result::ok) {
             let line = line.trim();
             if !line.is_empty() && !line.starts_with("::") {
-                let status_msg = if let Some(pkg) = extract_package_name(&line) {
+                let status_msg = if let Some(pkg) = extract_package_name(line) {
                     if line.contains("upgrading") {
                         format!("Upgrading {}", pkg)
                     } else if line.contains("installing") {
@@ -126,22 +201,6 @@ fn start_output_reader(stdout: std::process::ChildStdout, status: Arc<Mutex<Stri
             }
         }
     });
-}
-
-fn show_spinner(current_status: &Arc<Mutex<String>>, spinner_chars: &[&str]) {
-    let mut i = 0;
-    let initial_msg = current_status.lock().unwrap().clone();
-    print!("  {} {}...", crate::colo::blue(spinner_chars[0]), initial_msg);
-    io::stdout().flush().unwrap();
-
-    // Simple spinner animation - in a real implementation, this would check the actual process
-    for _ in 0..10 {
-        std::thread::sleep(Duration::from_millis(crate::constants::SPINNER_DELAY_MS));
-        let current_msg = current_status.lock().unwrap().clone();
-        print!("\r\x1b[2K  {} {}...", crate::colo::blue(spinner_chars[i % spinner_chars.len()]), current_msg);
-        io::stdout().flush().unwrap();
-        i += 1;
-    }
 }
 
 /// Extract package name from common paru/pacman output patterns

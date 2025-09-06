@@ -31,6 +31,7 @@ fn ensure_owl_directories() -> Result<(), String> {
 }
 
 /// Read existing environment variables from bash file
+#[allow(clippy::collapsible_if)]
 fn read_existing_env_vars() -> HashMap<String, String> {
     let mut existing = HashMap::new();
     let bash_file = match env_file_bash() {
@@ -175,7 +176,7 @@ pub fn set_environment_variables(envs: &[(String, String)]) -> Result<(), String
 }
 
 /// Collect all environment variables from config (package + global)
-pub fn collect_all_env_vars(config: &crate::config::Config) -> Vec<(String, String)> {
+pub fn collect_all_env_vars(config: &crate::domain::config::Config) -> Vec<(String, String)> {
     let mut all_env_vars = Vec::new();
 
     // Add global environment variables
@@ -193,30 +194,11 @@ pub fn collect_all_env_vars(config: &crate::config::Config) -> Vec<(String, Stri
     all_env_vars
 }
 
-/// Handle environment variables for apply command
-pub fn handle_environment(config: &crate::config::Config, dry_run: bool) -> Result<(), String> {
-    let all_env_vars = collect_all_env_vars(config);
-    if all_env_vars.is_empty() {
-        return Ok(());
-    }
-
-    if dry_run {
-        println!();
-        println!("[{}]", crate::colo::orange("environment"));
-        show_environment_dry_run_content(&all_env_vars);
-    } else {
-        let comparison = compare_env_vars(&all_env_vars);
-        set_environment_variables(&all_env_vars)?;
-        println!();
-        println!("[{}]", crate::colo::orange("environment"));
-        show_environment_changes_content(&comparison);
-    }
-
-    Ok(())
-}
+// Handle environment variables for apply command
+// Removed unused handle_environment; environment is handled via handle_environment_combined
 
 /// Handle environment variables combined with system section (no separate header)
-pub fn handle_environment_combined(config: &crate::config::Config, dry_run: bool) -> Result<(), String> {
+pub fn handle_environment_combined(config: &crate::domain::config::Config, dry_run: bool) -> Result<(), String> {
     let all_env_vars = collect_all_env_vars(config);
     if all_env_vars.is_empty() {
         return Ok(());
@@ -231,33 +213,19 @@ pub fn handle_environment_combined(config: &crate::config::Config, dry_run: bool
     }
 
     Ok(())
-}
-
-/// Show environment changes in dry-run mode
-fn show_environment_dry_run(env_vars: &[(String, String)]) {
-    println!();
-    println!("[{}]", crate::colo::orange("environment"));
-    show_environment_dry_run_content(env_vars);
 }
 
 /// Show environment dry-run content (without header)
 fn show_environment_dry_run_content(env_vars: &[(String, String)]) {
-    println!("  {} Environment variables to set:", crate::colo::blue("ℹ"));
+    println!("  {} Environment variables to set:", crate::infrastructure::color::blue("ℹ"));
 
     for (key, value) in env_vars {
         println!("    {} Would set: {}={}",
-            crate::colo::blue("✓"),
-            crate::colo::yellow(key),
-            crate::colo::green(value)
+            crate::infrastructure::color::blue("✓"),
+            crate::infrastructure::color::yellow(key),
+            crate::infrastructure::color::green(value)
         );
     }
-}
-
-/// Show environment changes after applying
-pub fn show_environment_changes(comparison: &EnvComparison) {
-    println!();
-    println!("[{}]", crate::colo::orange("environment"));
-    show_environment_changes_content(comparison);
 }
 
 /// Show environment changes content (without header)
@@ -265,9 +233,9 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
     if !comparison.added.is_empty() {
         for (key, value) in &comparison.added {
             println!("  {} Set: {}={}",
-                crate::colo::green("➔"),
-                crate::colo::yellow(key),
-                crate::colo::green(value)
+                crate::infrastructure::color::green("➔"),
+                crate::infrastructure::color::yellow(key),
+                crate::infrastructure::color::green(value)
             );
         }
     }
@@ -275,9 +243,9 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
     if !comparison.updated.is_empty() {
         for (key, value) in &comparison.updated {
             println!("  {} Updated: {}={}",
-                crate::colo::green("➔"),
-                crate::colo::yellow(key),
-                crate::colo::green(value)
+                crate::infrastructure::color::green("➔"),
+                crate::infrastructure::color::yellow(key),
+                crate::infrastructure::color::green(value)
             );
         }
     }
@@ -285,8 +253,8 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
     if !comparison.removed.is_empty() {
         for key in &comparison.removed {
             println!("  {} Removed: {}",
-                crate::colo::green("➔"),
-                crate::colo::yellow(key)
+                crate::infrastructure::color::green("➔"),
+                crate::infrastructure::color::yellow(key)
             );
         }
     }
@@ -294,14 +262,14 @@ pub fn show_environment_changes_content(comparison: &EnvComparison) {
     if comparison.added.is_empty() && comparison.updated.is_empty() && comparison.removed.is_empty() {
         if !comparison.unchanged.is_empty() {
             println!("  {} Environment variables maintained ({} unchanged)",
-                crate::colo::green("➔"),
-                crate::colo::blue(&comparison.unchanged.len().to_string())
+                crate::infrastructure::color::green("➔"),
+                crate::infrastructure::color::blue(&comparison.unchanged.len().to_string())
             );
         }
     } else if !comparison.unchanged.is_empty() {
         println!("  {} ({} environment variables unchanged)",
-            crate::colo::dim(""),
-            crate::colo::blue(&comparison.unchanged.len().to_string())
+            crate::infrastructure::color::dim(""),
+            crate::infrastructure::color::blue(&comparison.unchanged.len().to_string())
         );
     }
 }

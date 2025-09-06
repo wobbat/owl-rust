@@ -1,8 +1,6 @@
-use crate::add;
-use crate::apply;
-use crate::colo;
-use crate::dots;
-use crate::edit;
+use crate::commands::{add, apply, dots, edit};
+use crate::infrastructure::color as colo;
+use crate::infrastructure::constants;
 
 /// Global options for the CLI
 #[derive(Debug, Clone)]
@@ -29,8 +27,8 @@ pub struct Opts {
     pub cmd: Command,
 }
 
-/// Parse verbose and dry run flags from arguments and return (verbose, dry_run, filtered_args)
-pub fn parse_verbose(args: &[String]) -> (bool, bool, Vec<String>) {
+/// Parse global flags (-v/--verbose, --dr) and return (verbose, dry_run, remaining_args)
+pub fn parse_global_flags(args: &[String]) -> (bool, bool, Vec<String>) {
     let mut verbose = false;
     let mut dry_run = false;
     let mut filtered_args = Vec::new();
@@ -64,12 +62,12 @@ pub fn parse_command(filtered_args: &[String]) -> Result<Command, crate::error::
 /// Resolve command aliases to their canonical form
 fn resolve_command_alias<'a>(cmd_str: &'a str, cmd_args: &[String]) -> (&'a str, Vec<String>) {
     match cmd_str {
-        crate::constants::CMD_DE => (crate::constants::CMD_EDIT, vec![
-            crate::constants::EDIT_TYPE_DOTS.to_string(),
+        constants::CMD_DE => (constants::CMD_EDIT, vec![
+            constants::EDIT_TYPE_DOTS.to_string(),
             cmd_args.join(" ")
         ]),
-        crate::constants::CMD_CE => (crate::constants::CMD_EDIT, vec![
-            crate::constants::EDIT_TYPE_CONFIG.to_string(),
+        constants::CMD_CE => (constants::CMD_EDIT, vec![
+            constants::EDIT_TYPE_CONFIG.to_string(),
             cmd_args.join(" ")
         ]),
         _ => (cmd_str, cmd_args.to_vec())
@@ -79,12 +77,12 @@ fn resolve_command_alias<'a>(cmd_str: &'a str, cmd_args: &[String]) -> (&'a str,
 /// Parse the canonical command and its arguments
 fn parse_canonical_command(canonical_cmd: &str, mapped_args: &[String], original_cmd: &str) -> Result<Command, crate::error::OwlError> {
     match canonical_cmd {
-        crate::constants::CMD_APPLY => parse_apply_command(mapped_args),
-        crate::constants::CMD_EDIT => parse_edit_command(mapped_args),
-        crate::constants::CMD_DOTS => parse_dots_command(mapped_args),
-        crate::constants::CMD_ADD => parse_add_command(mapped_args),
-        crate::constants::CMD_CONFIGCHECK => parse_configcheck_command(mapped_args),
-        crate::constants::CMD_CONFIGHOST => parse_confighost_command(mapped_args),
+        constants::CMD_APPLY => parse_apply_command(mapped_args),
+        constants::CMD_EDIT => parse_edit_command(mapped_args),
+        constants::CMD_DOTS => parse_dots_command(mapped_args),
+        constants::CMD_ADD => parse_add_command(mapped_args),
+        constants::CMD_CONFIGCHECK => parse_configcheck_command(mapped_args),
+        constants::CMD_CONFIGHOST => parse_confighost_command(mapped_args),
         _ => Err(crate::error::OwlError::InvalidArguments(format!(
             "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, configcheck, confighost",
             original_cmd
@@ -94,20 +92,14 @@ fn parse_canonical_command(canonical_cmd: &str, mapped_args: &[String], original
 
 /// Parse apply command
 fn parse_apply_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
-    if args.is_empty() {
-        Ok(Command::Apply { dry_run: false })
-    } else {
-        Err(crate::error::OwlError::InvalidArguments("apply command takes no arguments".to_string()))
-    }
+    ensure_no_args(args, "apply command takes no arguments")?;
+    Ok(Command::Apply { dry_run: false })
 }
 
 /// Parse dots command
 fn parse_dots_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
-    if args.is_empty() {
-        Ok(Command::Dots { dry_run: false })
-    } else {
-        Err(crate::error::OwlError::InvalidArguments("dots command takes no arguments".to_string()))
-    }
+    ensure_no_args(args, "dots command takes no arguments")?;
+    Ok(Command::Dots { dry_run: false })
 }
 
 /// Parse edit command
@@ -164,6 +156,14 @@ fn parse_confighost_command(args: &[String]) -> Result<Command, crate::error::Ow
     }
 }
 
+fn ensure_no_args(args: &[String], message: &str) -> Result<(), crate::error::OwlError> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        Err(crate::error::OwlError::InvalidArguments(message.to_string()))
+    }
+}
+
 /// Execute the parsed command
 pub fn execute_command(opts: &Opts) {
     if opts.global.verbose {
@@ -180,13 +180,13 @@ pub fn execute_command(opts: &Opts) {
         Command::Dots { dry_run } => dots::run(*dry_run || opts.global.dry_run),
         Command::Add { items, search } => add::run(items, *search),
         Command::ConfigCheck { file } => {
-            if let Err(err) = crate::config::run_configcheck(file) {
+            if let Err(err) = crate::domain::config::run_configcheck(file) {
                 eprintln!("{}", colo::red(&err.to_string()));
                 std::process::exit(1);
             }
         }
         Command::ConfigHost => {
-            if let Err(err) = crate::config::run_confighost() {
+            if let Err(err) = crate::domain::config::run_confighost() {
                 eprintln!("{}", colo::red(&err.to_string()));
                 std::process::exit(1);
             }
@@ -196,7 +196,7 @@ pub fn execute_command(opts: &Opts) {
 
 /// Parse command line arguments and execute the corresponding command
 pub fn parse_and_execute(args: Vec<String>) {
-    let (verbose, dry_run, filtered_args) = parse_verbose(&args);
+    let (verbose, dry_run, filtered_args) = parse_global_flags(&args);
     let cmd = match parse_command(&filtered_args) {
         Ok(cmd) => cmd,
         Err(err) => {

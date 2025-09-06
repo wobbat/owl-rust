@@ -2,15 +2,14 @@
 
 use std::process::Command;
 use std::collections::HashSet;
-use crate::config::Config;
-use crate::state::PackageState;
+use crate::domain::config::Config;
+use crate::domain::state::PackageState;
 
 /// Package source types
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageSource {
     Repo,
     Aur,
-    Any,
 }
 
 /// Search result from package search
@@ -65,7 +64,7 @@ pub fn plan_package_actions(
 
 /// Get list of all installed packages
 pub fn get_installed_packages() -> Result<HashSet<String>, String> {
-    let output = Command::new(crate::constants::PACKAGE_MANAGER)
+    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
         .arg("-Q")
         .output()
         .map_err(|e| format!("Failed to get installed packages: {}", e))?;
@@ -96,12 +95,12 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
     println!("Package cleanup (removing conflicting packages):");
     for package in packages {
         println!("  {} Removing: {}",
-            crate::colo::red("remove"),
-            crate::colo::yellow(package)
+            crate::infrastructure::color::red("remove"),
+            crate::infrastructure::color::yellow(package)
         );
     }
 
-    let mut cmd = Command::new(crate::constants::PACKAGE_MANAGER);
+    let mut cmd = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER);
     cmd.arg("-Rns"); // Remove with dependencies, no save
 
     if quiet {
@@ -118,44 +117,23 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
     }
 
     println!("  {} Removed {} package(s)",
-        crate::colo::green("✓"),
+        crate::infrastructure::color::green("✓"),
         packages.len()
     );
 
     Ok(())
 }
 
-/// Install packages using the package manager
-pub fn install_packages(items: &[String]) -> Result<(), String> {
-    if items.is_empty() {
-        return Err("No packages specified for installation".to_string());
-    }
+// Removed unused install_packages helper; apply handles install/update paths
 
-    validate_package_names(items)?;
-
-    println!("{}", crate::colo::blue("Installing packages..."));
-    run_package_command(&["-S"], items, "install packages")
-}
-
-/// Validate package names for basic correctness
-fn validate_package_names(items: &[String]) -> Result<(), String> {
-    for item in items {
-        if item.trim().is_empty() {
-            return Err("Package names cannot be empty or whitespace only".to_string());
-        }
-        if item.contains(' ') {
-            return Err(format!("Invalid package name '{}': names cannot contain spaces", item));
-        }
-    }
-    Ok(())
-}
+// Removed unused validate_package_names helper
 
 /// Get the count of packages that can be upgraded
 pub fn get_package_count() -> Result<usize, String> {
-    let output = Command::new(crate::constants::PACKAGE_MANAGER)
+    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
         .arg("-Qu")
         .output()
-        .map_err(|e| format!("Failed to run {} -Qu: {}", crate::constants::PACKAGE_MANAGER, e))?;
+        .map_err(|e| format!("Failed to run {} -Qu: {}", crate::infrastructure::constants::PACKAGE_MANAGER, e))?;
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -168,16 +146,12 @@ pub fn get_package_count() -> Result<usize, String> {
         if output.status.code() == Some(1) && stderr.trim().is_empty() {
             Ok(0)
         } else {
-            Err(format!("{} -Qu failed: {}", crate::constants::PACKAGE_MANAGER, stderr))
+            Err(format!("{} -Qu failed: {}", crate::infrastructure::constants::PACKAGE_MANAGER, stderr))
         }
     }
 }
 
-/// Update all packages
-#[allow(dead_code)]
-pub fn update_packages() -> Result<(), String> {
-    run_package_command(&["-Syu", "--noconfirm"], &[], "update packages")
-}
+// Removed unused update_packages helper to reduce dead code
 
 /// Check if a package is installed
 ///
@@ -198,11 +172,11 @@ pub fn update_packages() -> Result<(), String> {
 /// }
 /// ```
 pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
-    let output = Command::new(crate::constants::PACKAGE_MANAGER)
+    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
         .arg("-Q")
         .arg(package_name)
         .output()
-        .map_err(|e| format!("Failed to run {} -Q {}: {}", crate::constants::PACKAGE_MANAGER, package_name, e))?;
+        .map_err(|e| format!("Failed to run {} -Q {}: {}", crate::infrastructure::constants::PACKAGE_MANAGER, package_name, e))?;
 
     Ok(output.status.success())
 }
@@ -351,7 +325,7 @@ pub fn search_packages_paru(terms: &[String]) -> Result<Vec<SearchResult>, Strin
 /// Execute paru search command
 fn run_paru_search(terms: &[String]) -> Result<String, String> {
     let mut cmd = Command::new("paru");
-    cmd.args(&["-Ss", "--bottomup"]);
+    cmd.args(["-Ss", "--bottomup"]);
     cmd.args(terms);
 
     let output = cmd.output()
@@ -455,30 +429,4 @@ fn parse_repo_name(repo_name: &str) -> Result<(&str, &str), String> {
     }
 }
 
-/// Run a package manager command with given args and items
-fn run_package_command(args: &[&str], items: &[String], operation: &str) -> Result<(), String> {
-    let mut cmd = Command::new(crate::constants::PACKAGE_MANAGER);
-    cmd.args(args);
-    if !items.is_empty() {
-        cmd.args(items);
-    }
-
-    match cmd.status() {
-        Ok(status) if status.success() => {
-            if operation.contains("install") {
-                println!("{}", crate::colo::green("✓ Packages installed successfully"));
-            }
-            Ok(())
-        }
-        Ok(status) => {
-            Err(format!(
-                "Failed to {} (exit code: {})",
-                operation,
-                status.code().unwrap_or(-1)
-            ))
-        }
-        Err(e) => {
-            Err(format!("Error running {}: {}", crate::constants::PACKAGE_MANAGER, e))
-        }
-    }
-}
+// Removed unused run_package_command helper

@@ -5,7 +5,6 @@ use std::env;
 
 #[derive(Debug, Clone)]
 pub struct Package {
-    pub name: String,
     pub config: Option<String>,
     pub service: Option<String>,
     pub env_vars: HashMap<String, String>,
@@ -94,12 +93,14 @@ impl Config {
             line.trim().to_string()
         };
         *current_package = Some(name.clone());
-        config.packages.insert(name.clone(), Package {
-            name,
-            config: None,
-            service: None,
-            env_vars: HashMap::new(),
-        });
+        config.packages.insert(
+            name.clone(),
+            Package {
+                config: None,
+                service: None,
+                env_vars: HashMap::new(),
+            },
+        );
     }
 
     fn parse_packages_section(
@@ -121,16 +122,19 @@ impl Config {
 
     fn parse_package_in_section(config: &mut Config, line: &str) {
         let package_name = line.trim().to_string();
-        config.packages.insert(package_name.clone(), Package {
-            name: package_name,
-            config: None,
-            service: None,
-            env_vars: HashMap::new(),
-        });
+        config.packages.insert(
+            package_name.clone(),
+            Package {
+                config: None,
+                service: None,
+                env_vars: HashMap::new(),
+            },
+        );
     }
 
 
 
+    #[allow(clippy::collapsible_if)]
     fn parse_config_directive(
         config: &mut Config,
         current_package: &Option<String>,
@@ -155,6 +159,7 @@ impl Config {
         Ok(())
     }
 
+    #[allow(clippy::collapsible_if)]
     fn parse_service_directive(
         config: &mut Config,
         current_package: &Option<String>,
@@ -170,6 +175,7 @@ impl Config {
         Ok(())
     }
 
+    #[allow(clippy::collapsible_if)]
     fn parse_package_env_directive(
         config: &mut Config,
         current_package: &Option<String>,
@@ -198,7 +204,7 @@ impl Config {
     }
 
     pub fn load_all_relevant_config_files() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_all_relevant_config_files_from_path(Path::new(&env::var("HOME")?).join(crate::constants::OWL_DIR))
+        Self::load_all_relevant_config_files_from_path(Path::new(&env::var("HOME")?).join(crate::infrastructure::constants::OWL_DIR))
     }
 
     pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(owl_root: P) -> Result<Self, Box<dyn std::error::Error>> {
@@ -266,34 +272,6 @@ impl Config {
         }
 
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn merge(&mut self, other: Self) {
-        // Merge packages
-        for (name, mut package) in other.packages {
-            self.packages.entry(name)
-                .and_modify(|existing| {
-                    if package.config.is_some() {
-                        existing.config = package.config.take();
-                    }
-                    if package.service.is_some() {
-                        existing.service = package.service.take();
-                    }
-                    existing.env_vars.extend(package.env_vars.drain());
-                })
-                .or_insert(package);
-        }
-
-        // Merge groups (avoid duplicates)
-        for group in other.groups {
-            if !self.groups.contains(&group) {
-                self.groups.push(group);
-            }
-        }
-
-        // Merge global env vars
-        self.env_vars.extend(other.env_vars);
     }
 
     // New function that implements precedence (higher priority completely replaces lower priority)
@@ -379,7 +357,7 @@ pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> 
     }
 
     // Try batch query first
-    let output = Command::new(crate::constants::PACKAGE_MANAGER)
+    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
         .arg("-Q")
         .args(&package_names)
         .output()
@@ -422,7 +400,7 @@ fn get_uninstalled_packages_parallel_fallback(config: &Config) -> Result<Vec<Str
     let uninstalled: Result<Vec<String>, String> = config.packages
         .par_iter()
         .filter_map(|(package_name, _)| {
-            match crate::package::is_package_installed(package_name) {
+            match crate::domain::package::is_package_installed(package_name) {
                 Ok(installed) => {
                     if !installed {
                         Some(Ok(package_name.clone()))
@@ -449,7 +427,6 @@ mod tests {
 
         assert!(config.packages.contains_key("test-package"));
         let package = &config.packages["test-package"];
-        assert_eq!(package.name, "test-package");
         assert_eq!(package.config.as_ref().unwrap(), "test -> ~/.config/test");
     }
 
@@ -462,9 +439,7 @@ mod tests {
         assert!(config.packages.contains_key("package2"));
         assert!(config.packages.contains_key("package3"));
 
-        assert_eq!(config.packages["package1"].name, "package1");
-        assert_eq!(config.packages["package2"].name, "package2");
-        assert_eq!(config.packages["package3"].name, "package3");
+        // keys serve as package names
     }
 
     #[test]
@@ -580,7 +555,6 @@ package2"#;
     fn test_merge_with_precedence() {
         let mut config1 = Config::new();
         config1.packages.insert("test".to_string(), Package {
-            name: "test".to_string(),
             config: Some("config1".to_string()),
             service: None,
             env_vars: std::collections::HashMap::new(),
@@ -588,7 +562,6 @@ package2"#;
 
         let mut config2 = Config::new();
         config2.packages.insert("test".to_string(), Package {
-            name: "test".to_string(),
             config: Some("config2".to_string()),
             service: Some("service2".to_string()),
             env_vars: std::collections::HashMap::new(),
@@ -607,14 +580,12 @@ package2"#;
 
         // Add some packages to the config
         config.packages.insert("installed-package".to_string(), Package {
-            name: "installed-package".to_string(),
             config: None,
             service: None,
             env_vars: std::collections::HashMap::new(),
         });
 
         config.packages.insert("uninstalled-package".to_string(), Package {
-            name: "uninstalled-package".to_string(),
             config: None,
             service: None,
             env_vars: std::collections::HashMap::new(),
@@ -638,7 +609,6 @@ package2"#;
 
         assert!(config.packages.contains_key("test-package"));
         let package = &config.packages["test-package"];
-        assert_eq!(package.name, "test-package");
         assert_eq!(package.config.as_ref().unwrap(), "test -> ~/.config/test");
     }
 
@@ -651,9 +621,7 @@ package2"#;
         assert!(config.packages.contains_key("package2"));
         assert!(config.packages.contains_key("package3"));
 
-        assert_eq!(config.packages["package1"].name, "package1");
-        assert_eq!(config.packages["package2"].name, "package2");
-        assert_eq!(config.packages["package3"].name, "package3");
+        // keys serve as package names
     }
 
     #[test]

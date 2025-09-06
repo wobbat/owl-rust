@@ -43,8 +43,8 @@ pub fn resolve_source_path(source: &str) -> Result<PathBuf, String> {
         let home = std::env::var("HOME")
             .map_err(|_| "HOME environment variable not set".to_string())?;
         Ok(PathBuf::from(home)
-            .join(crate::constants::OWL_DIR)
-            .join(crate::constants::DOTFILES_DIR)
+            .join(crate::infrastructure::constants::OWL_DIR)
+            .join(crate::infrastructure::constants::DOTFILES_DIR)
             .join(source))
     }
 }
@@ -311,7 +311,8 @@ pub fn has_actionable_dotfiles(mappings: &[DotfileMapping]) -> Result<bool, Stri
 }
 
 /// Get dotfile mappings from config
-pub fn get_dotfile_mappings(config: &crate::config::Config) -> Vec<DotfileMapping> {
+use crate::domain::config;
+pub fn get_dotfile_mappings(config: &config::Config) -> Vec<DotfileMapping> {
     config.packages.values()
         .filter_map(|pkg| {
             if let Some(config_str) = &pkg.config {
@@ -339,4 +340,82 @@ pub fn get_dotfile_mappings(config: &crate::config::Config) -> Vec<DotfileMappin
             }
         })
         .collect()
+}
+
+/// Print a concise summary of dotfile actions with consistent formatting
+pub fn print_actions(actions: &[DotfileAction], dry_run: bool) {
+    // Count up-to-date dotfiles
+    let up_to_date_count = actions
+        .iter()
+        .filter(|action| matches!(action.status, DotfileStatus::UpToDate))
+        .count();
+
+    if up_to_date_count > 0 {
+        println!(
+            "  {} Up to date: {} dotfiles",
+            crate::infrastructure::color::green("➔"),
+            up_to_date_count
+        );
+    }
+
+    // Show individual actions only for changes
+    for action in actions {
+        match action.status {
+            DotfileStatus::Create => {
+                if dry_run {
+                    println!(
+                        "  {} Would create: {} -> {}",
+                        crate::infrastructure::color::blue("ℹ"),
+                        action.source,
+                        action.destination
+                    );
+                } else {
+                    println!(
+                        "  {} Created: {} -> {}",
+                        crate::infrastructure::color::green("➔"),
+                        action.source,
+                        action.destination
+                    );
+                }
+            }
+            DotfileStatus::Update => {
+                if dry_run {
+                    println!(
+                        "  {} Would update: {} -> {}",
+                        crate::infrastructure::color::blue("ℹ"),
+                        action.source,
+                        action.destination
+                    );
+                } else {
+                    println!(
+                        "  {} Updated: {} -> {}",
+                        crate::infrastructure::color::green("➔"),
+                        action.source,
+                        action.destination
+                    );
+                }
+            }
+            DotfileStatus::Conflict => {
+                let reason = action
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| "Unknown conflict".to_string());
+                println!(
+                    "  {} Conflict: {} ({})",
+                    crate::infrastructure::color::red("✗"),
+                    action.destination,
+                    reason
+                );
+            }
+            DotfileStatus::UpToDate => {}
+            DotfileStatus::Skip => {}
+        }
+    }
+
+    if dry_run {
+        println!(
+            "  {} Dotfile analysis completed (dry-run mode)",
+            crate::infrastructure::color::blue("ℹ")
+        );
+    }
 }

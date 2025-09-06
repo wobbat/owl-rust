@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use crate::infrastructure::constants;
 
 /// Default system packages that should not be tracked
 fn default_untracked_packages() -> Vec<String> {
@@ -83,11 +84,13 @@ impl PackageState {
     }
 
     /// Check if a package is in the untracked list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_untracked(&self, package: &str) -> bool {
         self.untracked.contains(&package.to_string())
     }
 
     /// Check if a package is in the hidden list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_hidden(&self, package: &str) -> bool {
         self.hidden.contains(&package.to_string())
     }
@@ -98,6 +101,7 @@ impl PackageState {
     }
 
     /// Add a package to the untracked list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn add_untracked(&mut self, package: String) {
         if !self.untracked.contains(&package) {
             self.untracked.push(package);
@@ -106,11 +110,13 @@ impl PackageState {
     }
 
     /// Remove a package from the untracked list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn remove_untracked(&mut self, package: &str) {
         self.untracked.retain(|p| p != package);
     }
 
     /// Add a package to the hidden list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn add_hidden(&mut self, package: String) {
         if !self.hidden.contains(&package) {
             self.hidden.push(package);
@@ -119,11 +125,13 @@ impl PackageState {
     }
 
     /// Remove a package from the hidden list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn remove_hidden(&mut self, package: &str) {
         self.hidden.retain(|p| p != package);
     }
 
     /// Add a package to the managed list
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn add_managed(&mut self, package: String) {
         if !self.managed.contains(&package) {
             self.managed.push(package);
@@ -142,13 +150,13 @@ impl PackageState {
             .map_err(|_| "HOME environment variable not set".to_string())?;
 
         Ok(PathBuf::from(home)
-            .join(crate::constants::OWL_DIR)
-            .join(crate::constants::STATE_DIR))
+            .join(constants::OWL_DIR)
+            .join(constants::STATE_DIR))
     }
 
     /// Load untracked packages from JSON file
-    fn load_untracked_packages(state_dir: &PathBuf) -> Result<Vec<String>, String> {
-        let untracked_path = state_dir.join(crate::constants::UNTRACKED_STATE);
+    fn load_untracked_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
+        let untracked_path = state_dir.join(constants::UNTRACKED_STATE);
 
         if !untracked_path.exists() {
             // Initialize with default packages
@@ -167,8 +175,8 @@ impl PackageState {
     }
 
     /// Save untracked packages to JSON file
-    fn save_untracked_packages(state_dir: &PathBuf, packages: &[String]) -> Result<(), String> {
-        let untracked_path = state_dir.join(crate::constants::UNTRACKED_STATE);
+    fn save_untracked_packages(state_dir: &std::path::Path, packages: &[String]) -> Result<(), String> {
+        let untracked_path = state_dir.join(constants::UNTRACKED_STATE);
         let json = serde_json::to_string_pretty(packages)
             .map_err(|e| format!("Failed to serialize untracked packages: {}", e))?;
 
@@ -179,8 +187,8 @@ impl PackageState {
     }
 
     /// Load hidden packages from text file
-    fn load_hidden_packages(state_dir: &PathBuf) -> Result<Vec<String>, String> {
-        let hidden_path = state_dir.join(crate::constants::HIDDEN_STATE);
+    fn load_hidden_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
+        let hidden_path = state_dir.join(constants::HIDDEN_STATE);
 
         if !hidden_path.exists() {
             return Ok(Vec::new());
@@ -199,8 +207,8 @@ impl PackageState {
     }
 
     /// Save hidden packages to text file
-    fn save_hidden_packages(state_dir: &PathBuf, packages: &[String]) -> Result<(), String> {
-        let hidden_path = state_dir.join(crate::constants::HIDDEN_STATE);
+    fn save_hidden_packages(state_dir: &std::path::Path, packages: &[String]) -> Result<(), String> {
+        let hidden_path = state_dir.join(constants::HIDDEN_STATE);
         let content = packages.join("\n") + "\n";
 
         fs::write(&hidden_path, content)
@@ -210,8 +218,8 @@ impl PackageState {
     }
 
     /// Load managed packages from JSON file
-    fn load_managed_packages(state_dir: &PathBuf) -> Result<Vec<String>, String> {
-        let managed_path = state_dir.join(crate::constants::MANAGED_STATE);
+    fn load_managed_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
+        let managed_path = state_dir.join(constants::MANAGED_STATE);
 
         // Migration from legacy format is now complete
         // The managed.lock file has been converted to managed.json
@@ -235,8 +243,8 @@ impl PackageState {
 
 
     /// Save managed packages to JSON file
-    fn save_managed_packages(state_dir: &PathBuf, packages: &[String]) -> Result<(), String> {
-        let managed_path = state_dir.join(crate::constants::MANAGED_STATE);
+    fn save_managed_packages(state_dir: &std::path::Path, packages: &[String]) -> Result<(), String> {
+        let managed_path = state_dir.join(constants::MANAGED_STATE);
         let json = serde_json::to_string_pretty(packages)
             .map_err(|e| format!("Failed to serialize managed packages: {}", e))?;
 

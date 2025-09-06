@@ -1,22 +1,10 @@
 use std::env as std_env;
 
-mod add;
-mod apply;
-mod cmd_handler;
-mod colo;
-mod config;
-mod constants;
-mod dotfiles;
-mod dots;
-mod edit;
-mod env;
+mod cli;
+mod commands;
+mod domain;
 mod error;
-mod files;
-mod package;
-mod services;
-mod state;
-mod ui;
-mod util;
+mod infrastructure;
 
 fn main() {
     let args: Vec<String> = std_env::args().skip(1).collect();
@@ -27,14 +15,14 @@ fn main() {
         return;
     }
 
-    cmd_handler::parse_and_execute(args);
+    cli::handler::parse_and_execute(args);
 }
 
 /// Handle the 'uninstalled' command to show packages that are not installed
 fn handle_uninstalled_command() {
-    match config::Config::load_all_relevant_config_files() {
+    match domain::config::Config::load_all_relevant_config_files() {
         Ok(config) => {
-            match config::get_uninstalled_packages(&config) {
+            match domain::config::get_uninstalled_packages(&config) {
                 Ok(uninstalled) => {
                     if uninstalled.is_empty() {
                         println!("All packages are installed!");

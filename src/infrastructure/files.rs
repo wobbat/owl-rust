@@ -7,7 +7,7 @@ use std::process::Command;
 /// Open a file in the user's preferred editor
 pub fn open_editor(path: &str) -> Result<(), String> {
     let editor = env::var("EDITOR")
-        .unwrap_or_else(|_| crate::constants::DEFAULT_EDITOR.to_string());
+        .unwrap_or_else(|_| crate::infrastructure::constants::DEFAULT_EDITOR.to_string());
 
     Command::new(&editor)
         .arg(path)
@@ -27,14 +27,14 @@ pub fn find_config_file(arg: &str) -> Result<String, String> {
     let home = env::var("HOME")
         .map_err(|_| "HOME environment variable not set".to_string())?;
 
-    let base_dir = format!("{}/{}", home, crate::constants::OWL_DIR);
+    let base_dir = format!("{}/{}", home, crate::infrastructure::constants::OWL_DIR);
     let search_paths = [
-        format!("{}/{}{}", base_dir, arg, crate::constants::OWL_EXT),
+        format!("{}/{}{}", base_dir, arg, crate::infrastructure::constants::OWL_EXT),
         format!("{}/{}", base_dir, arg),
-        format!("{}/{}/{}{}", base_dir, crate::constants::HOSTS_DIR, arg, crate::constants::OWL_EXT),
-        format!("{}/{}/{}", base_dir, crate::constants::HOSTS_DIR, arg),
-        format!("{}/{}/{}{}", base_dir, crate::constants::GROUPS_DIR, arg, crate::constants::OWL_EXT),
-        format!("{}/{}/{}", base_dir, crate::constants::GROUPS_DIR, arg),
+        format!("{}/{}/{}{}", base_dir, crate::infrastructure::constants::HOSTS_DIR, arg, crate::infrastructure::constants::OWL_EXT),
+        format!("{}/{}/{}", base_dir, crate::infrastructure::constants::HOSTS_DIR, arg),
+        format!("{}/{}/{}{}", base_dir, crate::infrastructure::constants::GROUPS_DIR, arg, crate::infrastructure::constants::OWL_EXT),
+        format!("{}/{}/{}", base_dir, crate::infrastructure::constants::GROUPS_DIR, arg),
     ];
 
     for path in &search_paths {
@@ -54,8 +54,8 @@ pub fn get_dotfile_path(filename: &str) -> Result<String, String> {
     Ok(format!(
         "{}/{}/{}/{}",
         home,
-        crate::constants::OWL_DIR,
-        crate::constants::DOTFILES_DIR,
+        crate::infrastructure::constants::OWL_DIR,
+        crate::infrastructure::constants::DOTFILES_DIR,
         filename
     ))
 }
