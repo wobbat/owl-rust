@@ -1,4 +1,4 @@
-use crate::commands::{add, apply, dots, edit};
+use crate::commands::{add, adopt, apply, dots, edit};
 use crate::infrastructure::color as colo;
 use crate::infrastructure::constants;
 
@@ -16,6 +16,7 @@ pub enum Command {
     Edit { typ: String, arg: String },
     Dots { dry_run: bool },
     Add { items: Vec<String>, search: bool },
+    Adopt { items: Vec<String>, all: bool },
     ConfigCheck { file: String },
     ConfigHost,
 }
@@ -81,10 +82,11 @@ fn parse_canonical_command(canonical_cmd: &str, mapped_args: &[String], original
         constants::CMD_EDIT => parse_edit_command(mapped_args),
         constants::CMD_DOTS => parse_dots_command(mapped_args),
         constants::CMD_ADD => parse_add_command(mapped_args),
+        constants::CMD_ADOPT => parse_adopt_command(mapped_args),
         constants::CMD_CONFIGCHECK => parse_configcheck_command(mapped_args),
         constants::CMD_CONFIGHOST => parse_confighost_command(mapped_args),
         _ => Err(crate::error::OwlError::InvalidArguments(format!(
-            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, configcheck, confighost",
+            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, adopt, configcheck, confighost",
             original_cmd
         ))),
     }
@@ -138,6 +140,29 @@ fn parse_add_command(args: &[String]) -> Result<Command, crate::error::OwlError>
     Ok(Command::Add { items, search: search_mode })
 }
 
+/// Parse adopt command
+fn parse_adopt_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
+    if args.is_empty() {
+        return Err(crate::error::OwlError::InvalidArguments(
+            "adopt requires package names or --all".to_string(),
+        ));
+    }
+
+    let mut all = false;
+    let mut items = Vec::new();
+    for arg in args {
+        if arg == "--all" { all = true; } else { items.push(arg.clone()); }
+    }
+
+    if !all && items.is_empty() {
+        return Err(crate::error::OwlError::InvalidArguments(
+            "adopt requires at least one package or --all".to_string(),
+        ));
+    }
+
+    Ok(Command::Adopt { items, all })
+}
+
 /// Parse configcheck command
 fn parse_configcheck_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     if args.len() == 1 {
@@ -179,6 +204,7 @@ pub fn execute_command(opts: &Opts) {
         }
         Command::Dots { dry_run } => dots::run(*dry_run || opts.global.dry_run),
         Command::Add { items, search } => add::run(items, *search),
+        Command::Adopt { items, all } => adopt::run(items, *all),
         Command::ConfigCheck { file } => {
             if let Err(err) = crate::domain::config::run_configcheck(file) {
                 eprintln!("{}", colo::red(&err.to_string()));

@@ -7,6 +7,7 @@ pub const CMD_DE: &str = "de";
 pub const CMD_CE: &str = "ce";
 pub const CMD_DOTS: &str = "dots";
 pub const CMD_ADD: &str = "add";
+pub const CMD_ADOPT: &str = "adopt";
 pub const CMD_CONFIGCHECK: &str = "configcheck";
 pub const CMD_CONFIGHOST: &str = "confighost";
 

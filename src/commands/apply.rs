@@ -70,8 +70,20 @@ fn analyze_system() -> Result<Analysis, String> {
         .map_err(|e| format!("Failed to load config: {}", e))?;
 
     // Load package state
-    let state = crate::domain::state::PackageState::load()
+    let mut state = crate::domain::state::PackageState::load()
         .map_err(|e| format!("Failed to load package state: {}", e))?;
+
+    // Seed managed state with currently installed packages that are present in config.
+    // This ensures future removals are detected only for packages user explicitly managed via config.
+    if seed_managed_with_desired_installed(&config, &mut state)? {
+        // Best-effort save; don't fail analysis if saving state fails.
+        if let Err(e) = state.save() {
+            eprintln!(
+                "{}",
+                crate::infrastructure::color::red(&format!("Failed to save seeded package state: {}", e))
+            );
+        }
+    }
 
     // Plan package actions (installs and removals)
     let actions = crate::domain::package::plan_package_actions(&config, &state)
@@ -95,6 +107,35 @@ fn analyze_system() -> Result<Analysis, String> {
     ))
 }
 
+/// Ensure packages that are currently in the config and installed are marked as managed
+fn seed_managed_with_desired_installed(
+    config: &crate::domain::config::Config,
+    state: &mut crate::domain::state::PackageState,
+) -> Result<bool, String> {
+    let mut changed = false;
+    for pkg in config.packages.keys() {
+        if !state.is_managed(pkg) {
+            match crate::domain::package::is_package_installed(pkg) {
+                Ok(true) => {
+                    state.add_managed(pkg.to_string());
+                    changed = true;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!(
+                        "{}",
+                        crate::infrastructure::color::red(&format!(
+                            "Failed to verify installation of {}: {}",
+                            pkg, e
+                        ))
+                    );
+                }
+            }
+        }
+    }
+    Ok(changed)
+}
+
 fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domain::state::PackageState) {
     if to_remove.is_empty() {
         return;
@@ -113,6 +154,15 @@ fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::domai
             "  {} Would remove {} package(s)",
             crate::infrastructure::color::blue("ℹ"),
             to_remove.len()
+        );
+        return;
+    }
+
+    // Ask for explicit confirmation before removing packages
+    if !crate::cli::ui::confirm_remove_operation(to_remove) {
+        println!(
+            "  {}",
+            crate::infrastructure::color::blue("Package removal cancelled")
         );
         return;
     }
@@ -474,7 +524,7 @@ pub fn run(dry_run: bool) {
     let (
         package_count,
         _config,
-        mut _state,
+        mut state,
         actions,
         dotfile_count,
         env_var_count,
@@ -504,27 +554,18 @@ pub fn run(dry_run: bool) {
         })
         .collect();
 
-    // Save state to disk (skip in dry run)
-    if !dry_run {
-        if let Err(e) = _state.save() {
-            eprintln!(
-                "{}",
-                crate::infrastructure::color::red(&format!("Failed to save package state: {}", e))
-            );
-        }
-    }
-
     crate::cli::ui::generate_apply_output_with_install(
         package_count,
         to_install.len(),
         dotfile_count,
         service_count,
+        to_remove.len(),
     );
 
     let had_uninstalled = !to_install.is_empty();
 
     // Handle removals first
-    handle_removals(&to_remove, dry_run, &mut _state);
+    handle_removals(&to_remove, dry_run, &mut state);
 
     // Handle all package operations (install + update) in one combined phase
     run_combined_package_operations(
@@ -535,6 +576,40 @@ pub fn run(dry_run: bool) {
         env_var_count,
         dry_run,
     );
+
+    // After operations, mark newly installed packages as managed (only if installed by our tool)
+    if !dry_run {
+        let mut changed = false;
+        for pkg in &to_install {
+            match crate::domain::package::is_package_installed(pkg) {
+                Ok(true) => {
+                    if !state.is_managed(pkg) {
+                        state.add_managed(pkg.clone());
+                        changed = true;
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!(
+                        "{}",
+                        crate::infrastructure::color::red(&format!(
+                            "Failed to verify installation of {}: {}",
+                            pkg, e
+                        ))
+                    );
+                }
+            }
+        }
+
+        if changed {
+            if let Err(e) = state.save() {
+                eprintln!(
+                    "{}",
+                    crate::infrastructure::color::red(&format!("Failed to save package state: {}", e))
+                );
+            }
+        }
+    }
 }
 
 /// Handle system section (services + environment variables)

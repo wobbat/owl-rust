@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::Path;
-use std::env;
 
 #[derive(Debug, Clone)]
 pub struct Package {
@@ -44,7 +44,12 @@ impl Config {
                 continue;
             }
 
-            Self::parse_line(&mut config, &mut current_package, &mut in_packages_section, line)?;
+            Self::parse_line(
+                &mut config,
+                &mut current_package,
+                &mut in_packages_section,
+                line,
+            )?;
         }
 
         Ok(config)
@@ -116,7 +121,9 @@ impl Config {
         current_package: &mut Option<String>,
         line: &str,
     ) {
-        config.groups.push(line.strip_prefix("@group ").unwrap().trim().to_string());
+        config
+            .groups
+            .push(line.strip_prefix("@group ").unwrap().trim().to_string());
         *current_package = None;
     }
 
@@ -131,8 +138,6 @@ impl Config {
             },
         );
     }
-
-
 
     #[allow(clippy::collapsible_if)]
     fn parse_config_directive(
@@ -166,7 +171,11 @@ impl Config {
         line: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let service_part = line.strip_prefix(":service ").unwrap();
-        let service_name = service_part.split('[').next().unwrap_or(service_part).trim();
+        let service_name = service_part
+            .split('[')
+            .next()
+            .unwrap_or(service_part)
+            .trim();
         if let Some(pkg_name) = current_package {
             if let Some(package) = config.packages.get_mut(pkg_name) {
                 package.service = Some(service_name.to_string());
@@ -185,7 +194,9 @@ impl Config {
         if let Some((key, value)) = env_part.split_once('=') {
             if let Some(pkg_name) = current_package {
                 if let Some(package) = config.packages.get_mut(pkg_name) {
-                    package.env_vars.insert(key.trim().to_string(), value.trim().to_string());
+                    package
+                        .env_vars
+                        .insert(key.trim().to_string(), value.trim().to_string());
                 }
             }
         }
@@ -198,16 +209,22 @@ impl Config {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let env_part = line.strip_prefix("@env ").unwrap();
         if let Some((key, value)) = env_part.split_once('=') {
-            config.env_vars.insert(key.trim().to_string(), value.trim().to_string());
+            config
+                .env_vars
+                .insert(key.trim().to_string(), value.trim().to_string());
         }
         Ok(())
     }
 
     pub fn load_all_relevant_config_files() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_all_relevant_config_files_from_path(Path::new(&env::var("HOME")?).join(crate::infrastructure::constants::OWL_DIR))
+        Self::load_all_relevant_config_files_from_path(
+            Path::new(&env::var("HOME")?).join(crate::infrastructure::constants::OWL_DIR),
+        )
     }
 
-    pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(owl_root: P) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(
+        owl_root: P,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut config = Config::new();
         let owl_root = owl_root.as_ref();
 
@@ -236,7 +253,10 @@ impl Config {
         Ok(config)
     }
 
-    fn load_config_if_exists(config: &mut Config, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    fn load_config_if_exists(
+        config: &mut Config,
+        path: &Path,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if path.exists() {
             let loaded_config = Self::parse_file(path)?;
             config.merge_with_precedence(loaded_config);
@@ -288,8 +308,8 @@ impl Config {
             }
         }
 
-    // Replace global env vars (higher priority wins)
-    self.env_vars.extend(other.env_vars);
+        // Replace global env vars (higher priority wins)
+        self.env_vars.extend(other.env_vars);
     }
 }
 
@@ -344,78 +364,6 @@ pub fn run_confighost() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Get all packages from the config that are not currently installed
-pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> {
-    use std::collections::HashSet;
-    use std::process::Command;
-    use rayon::prelude::*;
-
-    let package_names: Vec<String> = config.packages.keys().cloned().collect();
-
-    if package_names.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Try batch query first
-    let output = Command::new(crate::infrastructure::constants::PACKAGE_MANAGER)
-        .arg("-Q")
-        .args(&package_names)
-        .output()
-        .map_err(|e| format!("Failed to check package installation status: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut installed_packages = HashSet::new();
-
-        // Parse installed packages from output
-        for line in stdout.lines() {
-            if let Some(package_name) = line.split_whitespace().next() {
-                installed_packages.insert(package_name.to_string());
-            }
-        }
-
-        // Find uninstalled packages using parallel processing
-        let uninstalled: Vec<String> = package_names
-            .par_iter()
-            .filter_map(|package_name| {
-                if !installed_packages.contains(package_name) {
-                    Some(package_name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        Ok(uninstalled)
-    } else {
-        // If batch query fails, fall back to parallel individual checks
-        get_uninstalled_packages_parallel_fallback(config)
-    }
-}
-
-/// Fallback method using parallel individual package checks
-fn get_uninstalled_packages_parallel_fallback(config: &Config) -> Result<Vec<String>, String> {
-    use rayon::prelude::*;
-
-    let uninstalled: Result<Vec<String>, String> = config.packages
-        .par_iter()
-        .filter_map(|(package_name, _)| {
-            match crate::domain::package::is_package_installed(package_name) {
-                Ok(installed) => {
-                    if !installed {
-                        Some(Ok(package_name.clone()))
-                    } else {
-                        None
-                    }
-                }
-                Err(err) => Some(Err(format!("Failed to check installation status for {}: {}", package_name, err))),
-            }
-        })
-        .collect();
-
-    uninstalled
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -450,7 +398,6 @@ mod tests {
         let package = &config.packages["test-service"];
         assert_eq!(package.service.as_ref().unwrap(), "test-service");
     }
-
 
     #[test]
     fn test_parse_env_directive() {
@@ -502,7 +449,10 @@ vi
         assert!(config.packages.contains_key("vi"));
 
         // Check config directive
-        assert_eq!(config.packages["fish"].config.as_ref().unwrap(), "fish -> ~/.config/fish");
+        assert_eq!(
+            config.packages["fish"].config.as_ref().unwrap(),
+            "fish -> ~/.config/fish"
+        );
 
         // Check global env
         assert_eq!(config.env_vars.get("EDITOR").unwrap(), "vim");
@@ -530,7 +480,10 @@ package2"#;
         assert!(config.packages.contains_key("test"));
         assert!(config.packages.contains_key("package1"));
         assert!(config.packages.contains_key("package2"));
-        assert_eq!(config.packages["test"].config.as_ref().unwrap(), "test -> ~/.config/test");
+        assert_eq!(
+            config.packages["test"].config.as_ref().unwrap(),
+            "test -> ~/.config/test"
+        );
     }
 
     #[test]
@@ -554,18 +507,24 @@ package2"#;
     #[test]
     fn test_merge_with_precedence() {
         let mut config1 = Config::new();
-        config1.packages.insert("test".to_string(), Package {
-            config: Some("config1".to_string()),
-            service: None,
-            env_vars: std::collections::HashMap::new(),
-        });
+        config1.packages.insert(
+            "test".to_string(),
+            Package {
+                config: Some("config1".to_string()),
+                service: None,
+                env_vars: std::collections::HashMap::new(),
+            },
+        );
 
         let mut config2 = Config::new();
-        config2.packages.insert("test".to_string(), Package {
-            config: Some("config2".to_string()),
-            service: Some("service2".to_string()),
-            env_vars: std::collections::HashMap::new(),
-        });
+        config2.packages.insert(
+            "test".to_string(),
+            Package {
+                config: Some("config2".to_string()),
+                service: Some("service2".to_string()),
+                env_vars: std::collections::HashMap::new(),
+            },
+        );
 
         config1.merge_with_precedence(config2);
 
@@ -579,17 +538,23 @@ package2"#;
         let mut config = Config::new();
 
         // Add some packages to the config
-        config.packages.insert("installed-package".to_string(), Package {
-            config: None,
-            service: None,
-            env_vars: std::collections::HashMap::new(),
-        });
+        config.packages.insert(
+            "installed-package".to_string(),
+            Package {
+                config: None,
+                service: None,
+                env_vars: std::collections::HashMap::new(),
+            },
+        );
 
-        config.packages.insert("uninstalled-package".to_string(), Package {
-            config: None,
-            service: None,
-            env_vars: std::collections::HashMap::new(),
-        });
+        config.packages.insert(
+            "uninstalled-package".to_string(),
+            Package {
+                config: None,
+                service: None,
+                env_vars: std::collections::HashMap::new(),
+            },
+        );
 
         // Note: This test assumes that "installed-package" exists and "uninstalled-package" doesn't
         // In a real test environment, you might want to mock the package installation check
@@ -649,7 +614,10 @@ vi
         assert!(config.packages.contains_key("vi"));
 
         // Check config directive
-        assert_eq!(config.packages["fish"].config.as_ref().unwrap(), "fish -> ~/.config/fish");
+        assert_eq!(
+            config.packages["fish"].config.as_ref().unwrap(),
+            "fish -> ~/.config/fish"
+        );
 
         // Check global env
         assert_eq!(config.env_vars.get("EDITOR").unwrap(), "vim");

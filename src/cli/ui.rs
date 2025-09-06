@@ -7,6 +7,7 @@ pub fn generate_apply_output_with_install(
     uninstalled_count: usize,
     _dotfile_count: usize,
     service_count: usize,
+    remove_count: usize,
 ) {
     let host_name = crate::infrastructure::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
     println!("[{}]", colo::blue("info"));
@@ -16,7 +17,7 @@ pub fn generate_apply_output_with_install(
         colo::bold(&(package_count + uninstalled_count).to_string()),
         colo::green(&format!("install {}", uninstalled_count)),
         colo::yellow(&format!("upgrade {}", package_count)),
-        colo::red("remove 0")
+        colo::red(&format!("remove {}", remove_count))
     );
     println!(
         "  managed pkgs: {}",
@@ -65,6 +66,28 @@ pub fn confirm_aur_operation(packages: &[String], operation: &str) -> bool {
         _ => operation.trim_end_matches("ing"),
     };
     print!("  -> Are you sure you wanna {} AUR packages? (y/N): ", verb);
+    std::io::stdout().flush().unwrap();
+
+    let mut input = String::new();
+    match std::io::stdin().read_line(&mut input) {
+        Ok(_) => matches!(input.trim().to_lowercase().as_str(), "y" | "yes"),
+        Err(_) => false,
+    }
+}
+
+/// Prompt user for removal confirmation
+pub fn confirm_remove_operation(packages: &[String]) -> bool {
+    use std::io::Write;
+    println!(
+        "\n  {} Package removals require confirmation",
+        colo::red("‼")
+    );
+    println!(
+        "  {} packages to remove: {}",
+        colo::yellow(&packages.len().to_string()),
+        packages.join(", ")
+    );
+    print!("  -> Are you sure you want to remove these packages? (y/N): ");
     std::io::stdout().flush().unwrap();
 
     let mut input = String::new();
