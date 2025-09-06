@@ -1,53 +1,23 @@
-use std::env;
-use std::path::Path;
-use std::process::Command;
+use crate::files;
 
-pub fn run(typ: &str, arg: &str) {
+/// Run the edit command to open files in editor
+pub fn run(typ: &str, arg: &str) -> Result<(), String> {
+    if arg.is_empty() {
+        return Err("edit command requires a non-empty argument".to_string());
+    }
+
     match typ {
-        "dots" => {
-            if arg.is_empty() {
-                eprintln!("{}", crate::colo::red("dots requires an argument"));
-                std::process::exit(1);
-            }
-            let home = env::var("HOME").unwrap();
-            let path = format!("{}/.owl/dotfiles/{}", home, arg);
-            open_editor(&path);
+        crate::constants::EDIT_TYPE_DOTS => {
+            let path = files::get_dotfile_path(arg)?;
+            files::open_editor(&path)
         }
-        "config" => {
-            if arg.is_empty() {
-                eprintln!("{}", crate::colo::red("config requires an argument"));
-                std::process::exit(1);
-            }
-            let home = env::var("HOME").unwrap();
-            let candidates = vec![
-                format!("{}/.owl/{}", home, arg),
-                format!("{}/.owl/{}.owl", home, arg),
-                format!("{}/owl/hosts/{}", home, arg),
-                format!("{}/owl/hosts/{}.owl", home, arg),
-                format!("{}/owl/groups/{}", home, arg),
-                format!("{}/owl/groups/{}.owl", home, arg),
-            ];
-            for candidate in candidates {
-                if Path::new(&candidate).exists() {
-                    open_editor(&candidate);
-                    return;
-                }
-            }
-            eprintln!("{}", crate::colo::red("config file not found"));
-            std::process::exit(1);
+        crate::constants::EDIT_TYPE_CONFIG => {
+            let path = files::find_config_file(arg)?;
+            files::open_editor(&path)
         }
-        _ => {
-            eprintln!("{}", crate::colo::red("edit type must be dots or config"));
-            std::process::exit(1);
-        }
+        _ => Err(format!("invalid edit type '{}'. Must be '{}' or '{}'",
+            typ, crate::constants::EDIT_TYPE_DOTS, crate::constants::EDIT_TYPE_CONFIG)),
     }
 }
 
-fn open_editor(path: &str) {
-    let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-    Command::new(editor)
-        .arg(path)
-        .status()
-        .expect("failed to open editor");
-}
 

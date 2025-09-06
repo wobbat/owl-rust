@@ -2,75 +2,114 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
+fn colorize(s: &str, code: &str) -> String {
+    format!("\x1b[{}m{}\x1b[0m", code, s)
+}
+
 pub fn red(s: &str) -> String {
-    format!("\x1b[31m{}\x1b[0m", s)
+    colorize(s, "31")
 }
 
 pub fn green(s: &str) -> String {
-    format!("\x1b[32m{}\x1b[0m", s)
+    colorize(s, "32")
 }
 
 pub fn yellow(s: &str) -> String {
-    format!("\x1b[33m{}\x1b[0m", s)
+    colorize(s, "33")
+}
+
+pub fn orange(s: &str) -> String {
+    colorize(s, "38;5;208")
+}
+
+pub fn env_orange(s: &str) -> String {
+    colorize(s, "38;5;166")
+}
+
+pub fn system_purple(s: &str) -> String {
+    colorize(s, "38;5;97")
 }
 
 pub fn blue(s: &str) -> String {
-    format!("\x1b[34m{}\x1b[0m", s)
+    colorize(s, "34")
 }
 
 pub fn magenta(s: &str) -> String {
-    format!("\x1b[35m{}\x1b[0m", s)
+    colorize(s, "35")
 }
 
 pub fn cyan(s: &str) -> String {
-    format!("\x1b[36m{}\x1b[0m", s)
+    colorize(s, "36")
+}
+
+pub fn teal(s: &str) -> String {
+    colorize(s, "38;5;37")
 }
 
 pub fn white(s: &str) -> String {
-    format!("\x1b[37m{}\x1b[0m", s)
+    colorize(s, "37")
 }
 
 pub fn bg_red(s: &str) -> String {
-    format!("\x1b[41m{}\x1b[0m", s)
+    colorize(s, "41")
 }
 
 pub fn bg_green(s: &str) -> String {
-    format!("\x1b[42m{}\x1b[0m", s)
+    colorize(s, "42")
 }
 
 pub fn bg_yellow(s: &str) -> String {
-    format!("\x1b[43m{}\x1b[0m", s)
+    colorize(s, "43")
 }
 
 pub fn bg_blue(s: &str) -> String {
-    format!("\x1b[44m{}\x1b[0m", s)
+    colorize(s, "44")
 }
 
 pub fn bg_magenta(s: &str) -> String {
-    format!("\x1b[45m{}\x1b[0m", s)
+    colorize(s, "45")
 }
 
 pub fn bg_cyan(s: &str) -> String {
-    format!("\x1b[46m{}\x1b[0m", s)
+    colorize(s, "46")
 }
 
 pub fn bg_white(s: &str) -> String {
-    format!("\x1b[47m{}\x1b[0m", s)
+    colorize(s, "47")
 }
 
 pub fn bold(s: &str) -> String {
-    format!("\x1b[1m{}\x1b[0m", s)
+    colorize(s, "1")
 }
 
 pub fn italic(s: &str) -> String {
-    format!("\x1b[3m{}\x1b[0m", s)
+    colorize(s, "3")
 }
 
 pub fn underline(s: &str) -> String {
-    format!("\x1b[4m{}\x1b[0m", s)
+    colorize(s, "4")
 }
 
 pub fn dim(s: &str) -> String {
-    format!("\x1b[2m{}\x1b[0m", s)
+    colorize(s, "2")
 }
 
+pub fn highlight(s: &str) -> String {
+    colorize(s, "1;36") // Bold cyan
+}
+
+pub fn success(s: &str) -> String {
+    colorize(s, "1;32") // Bold green
+}
+
+pub fn warning(s: &str) -> String {
+    colorize(s, "1;33") // Bold yellow
+}
+
+pub fn repository(s: &str) -> String {
+    colorize(s, "1;35") // Bold magenta
+}
+
+pub fn description(s: &str) -> String {
+    colorize(s, "2;37") // Dim white
+}
