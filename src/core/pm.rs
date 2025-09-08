@@ -2,7 +2,10 @@ use std::collections::HashSet;
 use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PackageSource { Repo, Aur }
+pub enum PackageSource {
+    Repo,
+    Aur,
+}
 
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -28,7 +31,11 @@ pub trait PackageManager {
 }
 
 pub struct ParuPacman;
-impl ParuPacman { pub fn new() -> Self { Self } }
+impl ParuPacman {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl PackageManager for ParuPacman {
     fn list_installed(&self) -> Result<HashSet<String>, String> {
@@ -46,24 +53,32 @@ impl PackageManager for ParuPacman {
         let mut installed = HashSet::new();
         for line in stdout.lines() {
             let name = line.trim();
-            if !name.is_empty() { installed.insert(name.to_string()); }
+            if !name.is_empty() {
+                installed.insert(name.to_string());
+            }
         }
         Ok(installed)
     }
 
     fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>, String> {
-        if packages.is_empty() { return Ok(HashSet::new()); }
+        if packages.is_empty() {
+            return Ok(HashSet::new());
+        }
         let mut cmd = Command::new("pacman");
         cmd.arg("-Si");
         cmd.args(packages);
-        let output = cmd.output().map_err(|e| format!("Failed to check package info: {}", e))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to check package info: {}", e))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut repo_names = HashSet::new();
         for line in stdout.lines() {
             if let Some(rest) = line.strip_prefix("Name") {
                 if let Some(idx) = rest.find(':') {
                     let value = rest[idx + 1..].trim();
-                    if !value.is_empty() { repo_names.insert(value.to_string()); }
+                    if !value.is_empty() {
+                        repo_names.insert(value.to_string());
+                    }
                 }
             }
         }
@@ -74,18 +89,27 @@ impl PackageManager for ParuPacman {
         let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
             .args(["-Qu", "-q"])
             .output()
-            .map_err(|e| format!(
-                "Failed to run {} -Qu: {}",
-                crate::internal::constants::PACKAGE_MANAGER,
-                e
-            ))?;
+            .map_err(|e| {
+                format!(
+                    "Failed to run {} -Qu: {}",
+                    crate::internal::constants::PACKAGE_MANAGER,
+                    e
+                )
+            })?;
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             Ok(stdout.lines().count())
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if output.status.code() == Some(1) && stderr.trim().is_empty() { Ok(0) }
-            else { Err(format!("{} -Qu failed: {}", crate::internal::constants::PACKAGE_MANAGER, stderr)) }
+            if output.status.code() == Some(1) && stderr.trim().is_empty() {
+                Ok(0)
+            } else {
+                Err(format!(
+                    "{} -Qu failed: {}",
+                    crate::internal::constants::PACKAGE_MANAGER,
+                    stderr
+                ))
+            }
         }
     }
 
@@ -100,7 +124,9 @@ impl PackageManager for ParuPacman {
                 .lines()
                 .filter_map(|line| {
                     let l = line.trim();
-                    if l.is_empty() { return None; }
+                    if l.is_empty() {
+                        return None;
+                    }
                     Some(l.split_whitespace().next().unwrap_or(l).to_string())
                 })
                 .collect();
@@ -117,19 +143,25 @@ impl PackageManager for ParuPacman {
     }
 
     fn install_repo(&self, packages: &[String]) -> Result<(), String> {
-        if packages.is_empty() { return Ok(()); }
+        if packages.is_empty() {
+            return Ok(());
+        }
         let args = ["--repo", "-S", "--noconfirm"];
         let status = crate::internal::util::run_command_with_spinner(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
             &format!("Installing {} repo packages", packages.len()),
         )?;
-        if !status.success() { return Err("Repository install failed".into()); }
+        if !status.success() {
+            return Err("Repository install failed".into());
+        }
         Ok(())
     }
 
     fn install_aur(&self, packages: &[String]) -> Result<(), String> {
-        if packages.is_empty() { return Ok(()); }
+        if packages.is_empty() {
+            return Ok(());
+        }
         let mut args = vec!["--aur", "-S", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
         let status = crate::internal::util::run_command_with_spinner(
@@ -137,7 +169,9 @@ impl PackageManager for ParuPacman {
             &args,
             &format!("Installing {} AUR packages", packages.len()),
         )?;
-        if !status.success() { return Err("AUR install failed".into()); }
+        if !status.success() {
+            return Err("AUR install failed".into());
+        }
         Ok(())
     }
 
@@ -148,27 +182,42 @@ impl PackageManager for ParuPacman {
             "Updating official repository packages (syncing databases and upgrading packages)",
         )?;
         if status.success() {
-            println!("  {} Official repos synced", crate::internal::color::green("⸎"));
+            println!(
+                "  {} Official repos synced",
+                crate::internal::color::green("⸎")
+            );
             Ok(())
         } else if status.code() == Some(1) {
-            println!("  {} Packages from main repos have been updated", crate::internal::color::green("⸎"));
+            println!(
+                "  {} Packages from main repos have been updated",
+                crate::internal::color::green("⸎")
+            );
             Ok(())
         } else {
-            Err(format!("Repository update failed (exit code: {:?})", status.code()))
+            Err(format!(
+                "Repository update failed (exit code: {:?})",
+                status.code()
+            ))
         }
     }
 
     fn update_aur(&self, packages: &[String]) -> Result<(), String> {
-        if packages.is_empty() { return Ok(()); }
+        if packages.is_empty() {
+            return Ok(());
+        }
         let mut args = vec!["--aur", "-Syu", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
         let (status, stderr_out) = crate::internal::util::run_command_with_spinner_capture(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
             "Updating AUR packages",
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         if status.success() {
-            println!("\r\x1b[2K  {} AUR package updates completed", crate::internal::color::green("⸎"));
+            println!(
+                "\r\x1b[2K  {} AUR package updates completed",
+                crate::internal::color::green("⸎")
+            );
             Ok(())
         } else {
             let err = stderr_out.trim();
@@ -176,21 +225,33 @@ impl PackageManager for ParuPacman {
                 let lines: Vec<&str> = err.lines().collect();
                 let take = 30usize;
                 let start = lines.len().saturating_sub(take);
-                for line in &lines[start..] { eprintln!("  {}", line); }
+                for line in &lines[start..] {
+                    eprintln!("  {}", line);
+                }
             }
             Err("AUR package update failed".to_string())
         }
     }
 
     fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<(), String> {
-        if packages.is_empty() { return Ok(()); }
+        if packages.is_empty() {
+            return Ok(());
+        }
         let mut cmd = Command::new(crate::internal::constants::PACKAGE_MANAGER);
         cmd.arg("-Rns");
-        if quiet { cmd.arg("--noconfirm"); }
+        if quiet {
+            cmd.arg("--noconfirm");
+        }
         cmd.args(packages);
-        let status = cmd.status().map_err(|e| format!("Failed to remove packages: {}", e))?;
+        let status = cmd
+            .status()
+            .map_err(|e| format!("Failed to remove packages: {}", e))?;
         if status.success() {
-            println!("  {} Removed {} package(s)", crate::internal::color::green("✓"), packages.len());
+            println!(
+                "  {} Removed {} package(s)",
+                crate::internal::color::green("✓"),
+                packages.len()
+            );
             Ok(())
         } else {
             Err("Package removal failed".to_string())
@@ -198,11 +259,15 @@ impl PackageManager for ParuPacman {
     }
 
     fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>, String> {
-        if terms.is_empty() { return Ok(Vec::new()); }
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut cmd = Command::new("paru");
         cmd.args(["-Ss", "--bottomup"]);
         cmd.args(terms);
-        let output = cmd.output().map_err(|e| format!("Failed to run paru search: {}", e))?;
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to run paru search: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("Paru search failed: {}", stderr));
@@ -213,7 +278,11 @@ impl PackageManager for ParuPacman {
 }
 
 fn is_header_line(line: &str) -> bool {
-    line.contains('/') && line.contains(' ') && !line.starts_with(' ') && !line.starts_with('[') && line.split_whitespace().next().unwrap_or("").contains('/')
+    line.contains('/')
+        && line.contains(' ')
+        && !line.starts_with(' ')
+        && !line.starts_with('[')
+        && line.split_whitespace().next().unwrap_or("").contains('/')
 }
 
 fn parse_repo_name(repo_name: &str) -> Result<(&str, &str), String> {
@@ -228,12 +297,25 @@ fn parse_repo_name(repo_name: &str) -> Result<(&str, &str), String> {
 
 fn parse_header_line(line: &str) -> Result<SearchResult, String> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.is_empty() { return Err("Empty header line".to_string()); }
+    if parts.is_empty() {
+        return Err("Empty header line".to_string());
+    }
     let repo_name_part = parts[0];
     let (repo, name) = parse_repo_name(repo_name_part)?;
     let version = parts.get(1).ok_or("Missing version in header line")?;
     let installed = line.contains("[installed]");
-    Ok(SearchResult { name: name.to_string(), ver: version.to_string(), source: if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo }, repo: repo.to_string(), description: String::new(), installed })
+    Ok(SearchResult {
+        name: name.to_string(),
+        ver: version.to_string(),
+        source: if repo == "aur" {
+            PackageSource::Aur
+        } else {
+            PackageSource::Repo
+        },
+        repo: repo.to_string(),
+        description: String::new(),
+        installed,
+    })
 }
 
 fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
@@ -242,19 +324,29 @@ fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
     for line in output.lines() {
         let original_line = line;
         let trimmed_line = line.trim();
-        if trimmed_line.is_empty() { continue; }
+        if trimmed_line.is_empty() {
+            continue;
+        }
         if is_header_line(trimmed_line) {
-            if let Some(result) = current_result.take() { results.push(result); }
+            if let Some(result) = current_result.take() {
+                results.push(result);
+            }
             current_result = Some(parse_header_line(trimmed_line)?);
         } else if original_line.starts_with("    ") {
             if let Some(ref mut result) = current_result {
                 let desc_part = trimmed_line;
-                if result.description.is_empty() { result.description = desc_part.to_string(); }
-                else { result.description.push(' '); result.description.push_str(desc_part); }
+                if result.description.is_empty() {
+                    result.description = desc_part.to_string();
+                } else {
+                    result.description.push(' ');
+                    result.description.push_str(desc_part);
+                }
             }
         }
     }
-    if let Some(result) = current_result { results.push(result); }
+    if let Some(result) = current_result {
+        results.push(result);
+    }
     Ok(results)
 }
 
@@ -285,7 +377,10 @@ extra/nim 2.0.8-1 [13.08 MiB 58.55 MiB]
 
     #[test]
     fn test_parse_repo_name() {
-        assert_eq!(parse_repo_name("aur/package-name").unwrap(), ("aur", "package-name"));
+        assert_eq!(
+            parse_repo_name("aur/package-name").unwrap(),
+            ("aur", "package-name")
+        );
         assert_eq!(parse_repo_name("extra/bash").unwrap(), ("extra", "bash"));
         assert!(parse_repo_name("invalid-format").is_err());
     }
@@ -293,7 +388,9 @@ extra/nim 2.0.8-1 [13.08 MiB 58.55 MiB]
     #[test]
     fn test_is_header_line() {
         assert!(is_header_line("aur/jet-bin 0.7.27-1 [+5 ~0.00]"));
-        assert!(is_header_line("extra/texlive-latexextra 2025.2-2 [29.63 MiB 95.69 MiB] (texlive)"));
+        assert!(is_header_line(
+            "extra/texlive-latexextra 2025.2-2 [29.63 MiB 95.69 MiB] (texlive)"
+        ));
         assert!(!is_header_line("    Description line"));
         assert!(!is_header_line("[some other format]"));
     }

@@ -1,0 +1,26 @@
+config = { SOI ~ (directive | comment | NEWLINE)* ~ EOI }
+
+directive = { packages_section | package_decl | config_dir | service_dir | env_dir | global_env_dir | group_decl | package_in_section }
+
+package_decl = { ("@package" | "@pkg") ~ identifier }
+packages_section = { ("@packages" | "@pkgs") }
+config_dir = { ":config" ~ (config_mapping | config_value) }
+service_dir = { ":service" ~ identifier ~ service_options? }
+env_dir = { ":env" ~ key_value }
+global_env_dir = { "@env" ~ key_value }
+group_decl = { "@group" ~ identifier }
+package_in_section = { !("@" | ":" | "#") ~ identifier }
+
+config_value = { string_value }
+config_mapping = { string_value ~ "->" ~ string_value }
+key_value = { identifier ~ "=" ~ string_value }
+service_options = { "[" ~ service_option ~ ("," ~ service_option)* ~ "]" }
+service_option = { identifier ~ "=" ~ (boolean | identifier) }
+
+identifier = { (ASCII_ALPHANUMERIC | "_" | "-" | "." | "/" | "~")+ }
+string_value = { (!NEWLINE ~ ANY)+ }
+boolean = { "true" | "false" }
+comment = { "#" ~ (!NEWLINE ~ ANY)* }
+
+WHITESPACE = { " " | "\t" }
+NEWLINE = { "\n" | "\r\n" | "\r" }

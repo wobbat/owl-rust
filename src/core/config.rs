@@ -3,14 +3,21 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Clone)]
+use pest::Parser;
+use pest_derive::Parser;
+
+#[derive(Parser)]
+#[grammar = "src/config.pest"]
+pub struct ConfigParser;
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Package {
     pub config: Option<String>,
     pub service: Option<String>,
     pub env_vars: HashMap<String, String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct Config {
     pub packages: HashMap<String, Package>,
     pub groups: Vec<String>,
@@ -27,8 +34,165 @@ impl Config {
     }
 
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::parse_file_with_pest(path, false)
+    }
+
+    pub fn parse_file_with_pest<P: AsRef<Path>>(path: P, use_pest: bool) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
-        Self::parse(&content)
+        if use_pest {
+            Self::parse_with_pest(&content)
+        } else {
+            Self::parse(&content)
+        }
+    }
+
+    pub fn parse_with_pest(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut config = Config::new();
+        let mut current_package: Option<String> = None;
+        let mut in_packages_section = false;
+
+        let pairs = ConfigParser::parse(Rule::config, content)?;
+
+        for pair in pairs {
+            if let Rule::config = pair.as_rule() {
+                for inner_pair in pair.into_inner() {
+                    match inner_pair.as_rule() {
+                        Rule::directive => {
+                            Self::parse_pest_directive(&mut config, &mut current_package, &mut in_packages_section, inner_pair)?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(config)
+    }
+
+    fn parse_pest_directive(
+        config: &mut Config,
+        current_package: &mut Option<String>,
+        in_packages_section: &mut bool,
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let inner = pair.into_inner().next().ok_or("Invalid directive")?;
+        match inner.as_rule() {
+            Rule::package_decl => {
+                *in_packages_section = false;
+                let rule_content = inner.as_str().to_string();
+                let mut inner_iter = inner.into_inner();
+                inner_iter.next(); // skip @package or @pkg
+                let name_pair = inner_iter.next().ok_or(format!("Missing package name in package_decl, rule content: '{}'", rule_content))?;
+                let name = name_pair.as_str().to_string();
+                *current_package = Some(name.clone());
+                config.packages.insert(
+                    name,
+                    Package {
+                        config: None,
+                        service: None,
+                        env_vars: HashMap::new(),
+                    },
+                );
+            }
+            Rule::packages_section => {
+                *in_packages_section = true;
+                *current_package = None;
+            }
+            Rule::config_dir => {
+                if let Some(pkg_name) = current_package {
+                    let mut inner_iter = inner.into_inner();
+                    inner_iter.next(); // skip :config
+                    let config_pair = inner_iter.next().ok_or("Missing config value")?;
+                    
+                    let config_str = match config_pair.as_rule() {
+                        Rule::config_mapping => {
+                            // Handle "source -> destination" format
+                            let mut map_iter = config_pair.into_inner();
+                            let source = map_iter.next().ok_or("Missing source")?.as_str();
+                            let dest = map_iter.next().ok_or("Missing destination")?.as_str();
+                            format!("{} -> {}", source, dest)
+                        }
+                        Rule::config_value => {
+                            config_pair.as_str().to_string()
+                        }
+                        _ => config_pair.as_str().to_string()
+                    };
+                    
+                    if let Some(package) = config.packages.get_mut(pkg_name) {
+                        package.config = Some(config_str);
+                    }
+                }
+            }
+            Rule::service_dir => {
+                if let Some(pkg_name) = current_package {
+                    let mut inner_iter = inner.into_inner();
+                    inner_iter.next(); // skip :service
+                    let service_pair = inner_iter.next().ok_or("Missing service name")?;
+                    let service_name = service_pair.as_str().to_string();
+                    // Skip service options for now - just take the service name
+                    if let Some(package) = config.packages.get_mut(pkg_name) {
+                        package.service = Some(service_name);
+                    }
+                }
+            }
+            Rule::env_dir => {
+                if let Some(pkg_name) = current_package {
+                    let mut inner_iter = inner.into_inner();
+                    inner_iter.next(); // skip :env
+                    let key_value_pair = inner_iter.next().ok_or("Missing env key-value")?;
+                    
+                    // Parse the key_value rule
+                    let mut kv_iter = key_value_pair.into_inner();
+                    let key = kv_iter.next().ok_or("Missing key")?.as_str();
+                    let value = kv_iter.next().ok_or("Missing value")?.as_str();
+                    
+                    if let Some(package) = config.packages.get_mut(pkg_name) {
+                        package.env_vars.insert(key.to_string(), value.to_string());
+                    }
+                }
+            }
+            Rule::global_env_dir => {
+                let mut inner_iter = inner.into_inner();
+                inner_iter.next(); // skip @env
+                let key_value_pair = inner_iter.next().ok_or("Missing global env key-value")?;
+                
+                // Parse the key_value rule
+                let mut kv_iter = key_value_pair.into_inner();
+                let key = kv_iter.next().ok_or("Missing key")?.as_str();
+                let value = kv_iter.next().ok_or("Missing value")?.as_str();
+                
+                config.env_vars.insert(key.to_string(), value.to_string());
+            }
+            Rule::group_decl => {
+                let mut inner_iter = inner.into_inner();
+                inner_iter.next(); // skip @group
+                let group_pair = inner_iter.next().ok_or("Missing group name")?;
+                let group_name = group_pair.as_str().to_string();
+                config.groups.push(group_name);
+                *current_package = None;
+            }
+            Rule::package_in_section => {
+                let rule_content = inner.as_str().to_string();
+                let mut inner_iter = inner.into_inner();
+                let name_pair = inner_iter.next().ok_or(format!("Missing package name in section, rule content: '{}'", rule_content))?;
+                let name = name_pair.as_str().to_string();
+                if name.trim().is_empty() {
+                    return Err("Empty package name".into());
+                }
+                if *in_packages_section {
+                    config.packages.insert(
+                        name,
+                        Package {
+                            config: None,
+                            service: None,
+                            env_vars: HashMap::new(),
+                        },
+                    );
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     pub fn parse(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
@@ -217,13 +381,25 @@ impl Config {
     }
 
     pub fn load_all_relevant_config_files() -> Result<Self, Box<dyn std::error::Error>> {
-        Self::load_all_relevant_config_files_from_path(
+        Self::load_all_relevant_config_files_with_pest(false)
+    }
+
+    pub fn load_all_relevant_config_files_with_pest(use_pest: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_all_relevant_config_files_from_path_with_pest(
             Path::new(&env::var("HOME")?).join(crate::internal::constants::OWL_DIR),
+            use_pest,
         )
     }
 
     pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(
         owl_root: P,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::load_all_relevant_config_files_from_path_with_pest(owl_root, false)
+    }
+
+    pub fn load_all_relevant_config_files_from_path_with_pest<P: AsRef<Path>>(
+        owl_root: P,
+        use_pest: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut config = Config::new();
         let owl_root = owl_root.as_ref();
@@ -232,22 +408,18 @@ impl Config {
 
         // 1. Load main config (highest priority)
         let main_config_path = owl_root.join(crate::internal::constants::MAIN_CONFIG_FILE);
-        if main_config_path.exists() {
-            Self::load_config_if_exists(&mut config, &main_config_path)?;
-        }
+        Self::load_config_if_exists(&mut config, &main_config_path, use_pest)?;
 
         // 2. Load host-specific config (medium priority)
         let hostname = fs::read_to_string("/etc/hostname")?.trim().to_string();
         let host_config_path = owl_root.join("hosts").join(format!("{}.owl", hostname));
-        if host_config_path.exists() {
-            Self::load_config_if_exists(&mut config, &host_config_path)?;
-        }
+        Self::load_config_if_exists(&mut config, &host_config_path, use_pest)?;
 
         // 3. Load group configs (lowest priority)
         let groups_path = owl_root.join("groups");
         if groups_path.exists() && groups_path.is_dir() {
             let mut processed_groups = std::collections::HashSet::new();
-            Self::load_groups_with_precedence(&groups_path, &mut config, &mut processed_groups)?;
+            Self::load_groups_with_precedence(&groups_path, &mut config, &mut processed_groups, use_pest)?;
         }
 
         Ok(config)
@@ -256,9 +428,10 @@ impl Config {
     fn load_config_if_exists(
         config: &mut Config,
         path: &Path,
+        use_pest: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if path.exists() {
-            let loaded_config = Self::parse_file(path)?;
+            let loaded_config = Self::parse_file_with_pest(path, use_pest)?;
             config.merge_with_precedence(loaded_config);
         }
         Ok(())
@@ -268,6 +441,7 @@ impl Config {
         groups_path: &Path,
         config: &mut Config,
         processed_groups: &mut std::collections::HashSet<String>,
+        use_pest: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut groups_to_process: Vec<String> = config.groups.clone();
 
@@ -279,7 +453,7 @@ impl Config {
 
             let group_file = groups_path.join(format!("{}.owl", group_name));
             if group_file.exists() {
-                let group_config = Self::parse_file(&group_file)?;
+                let group_config = Self::parse_file_with_pest(&group_file, use_pest)?;
                 // Add any new groups found in this group file
                 for new_group in &group_config.groups {
                     if !processed_groups.contains(new_group) {
@@ -315,11 +489,16 @@ impl Config {
 
 /// Validate a provided .owl config file can be parsed
 pub fn run_configcheck(path: &str) -> Result<(), String> {
+    run_configcheck_with_pest(path, false)
+}
+
+/// Validate a provided .owl config file can be parsed with optional Pest parser
+pub fn run_configcheck_with_pest(path: &str, use_pest: bool) -> Result<(), String> {
     let p = std::path::Path::new(path);
     if !p.exists() {
         return Err(format!("Config file not found: {}", path));
     }
-    match Config::parse_file(p) {
+    match Config::parse_file_with_pest(p, use_pest) {
         Ok(_) => {
             println!(
                 "{} {}",
@@ -329,6 +508,62 @@ pub fn run_configcheck(path: &str) -> Result<(), String> {
             Ok(())
         }
         Err(e) => Err(format!("Failed to parse {}: {}", path, e)),
+    }
+}
+
+/// Validate and print the full config chain (main, hostname, groups) with optional Pest parser
+pub fn run_full_configcheck_with_pest(use_pest: bool) -> Result<(), String> {
+    let owl_root = std::path::Path::new(&std::env::var("HOME").map_err(|_| "HOME not set".to_string())?).join(crate::internal::constants::OWL_DIR);
+    println!("Loading config from: {}", owl_root.display());
+
+    // Check main config
+    let main_config_path = owl_root.join(crate::internal::constants::MAIN_CONFIG_FILE);
+    println!("Main config: {} (exists: {})", main_config_path.display(), main_config_path.exists());
+
+    // Check host config
+    let hostname = std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "unknown".to_string()).trim().to_string();
+    let host_config_path = owl_root.join("hosts").join(format!("{}.owl", hostname));
+    println!("Host config: {} (exists: {})", host_config_path.display(), host_config_path.exists());
+
+    // Check groups
+    let groups_path = owl_root.join("groups");
+    println!("Groups dir: {} (exists: {})", groups_path.display(), groups_path.exists());
+    if groups_path.exists() {
+        if let Ok(entries) = std::fs::read_dir(&groups_path) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    println!("  Group file: {} (exists: {})", entry.path().display(), entry.path().exists());
+                }
+            }
+        }
+    }
+
+    match Config::load_all_relevant_config_files_with_pest(use_pest) {
+        Ok(config) => {
+            println!(
+                "{}",
+                crate::internal::color::green("✓ Full config chain loaded successfully")
+            );
+            println!("{}", serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?);
+
+            // Print summary
+            let package_count = config.packages.len();
+            let dotfile_count = config.packages.values().filter(|pkg| pkg.config.is_some()).count();
+            let service_count = config.packages.values().filter(|pkg| pkg.service.is_some()).count();
+            let env_var_count = config.packages.values().map(|pkg| pkg.env_vars.len()).sum::<usize>() + config.env_vars.len();
+            let group_count = config.groups.len();
+
+            println!();
+            println!("Summary:");
+            println!("  Packages: {}", package_count);
+            println!("  Dotfiles: {}", dotfile_count);
+            println!("  Services: {}", service_count);
+            println!("  Environment variables: {}", env_var_count);
+            println!("  Groups: {}", group_count);
+
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to load full config: {}", e)),
     }
 }
 

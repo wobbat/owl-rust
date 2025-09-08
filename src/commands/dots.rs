@@ -1,5 +1,6 @@
 /// Run the dots command to apply dotfile synchronization
-pub fn run(dry_run: bool) {
+pub fn run(opts: &crate::cli::handler::CliOptions) {
+    let dry_run = opts.global.dry_run;
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
@@ -9,7 +10,7 @@ pub fn run(dry_run: bool) {
     }
 
     // Load configuration
-    let config = match crate::core::config::Config::load_all_relevant_config_files() {
+    let config = match crate::core::config::Config::load_all_relevant_config_files_with_pest(opts.global.use_pest) {
         Ok(config) => config,
         Err(err) => {
             eprintln!(

@@ -33,15 +33,15 @@ type Analysis = (
     usize,                          // config_package_count
 );
 
-fn analyze_system() -> Result<Analysis, String> {
+fn analyze_system(use_pest: bool) -> Result<Analysis, String> {
     use std::thread;
 
     // Run independent, potentially slow operations in parallel
     // 1) Count upgradable packages
     let count_handle = thread::spawn(|| crate::core::package::get_package_count());
     // 2) Load config files
-    let config_handle = thread::spawn(|| {
-        crate::core::config::Config::load_all_relevant_config_files()
+    let config_handle = thread::spawn(move || {
+        crate::core::config::Config::load_all_relevant_config_files_with_pest(use_pest)
             .map_err(|e| e.to_string())
     });
     // 3) Load package state from disk
@@ -407,7 +407,8 @@ fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run: boo
 
 /// Run the apply command to update packages and system
 #[allow(clippy::collapsible_if)]
-pub fn run(dry_run: bool) {
+pub fn run(opts: &crate::cli::handler::CliOptions) {
+    let dry_run = opts.global.dry_run;
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
@@ -417,7 +418,8 @@ pub fn run(dry_run: bool) {
     }
 
     // Perform analysis with spinner
-    let analysis_result = crate::internal::util::run_with_spinner(analyze_system, "Analyzing system configuration");
+    let use_pest = opts.global.use_pest;
+    let analysis_result = crate::internal::util::run_with_spinner(move || analyze_system(use_pest), "Analyzing system configuration");
 
     let (
         package_count,
@@ -427,7 +429,7 @@ pub fn run(dry_run: bool) {
         dotfile_count,
         env_var_count,
         service_count,
-        _config_package_count,
+        config_package_count,
     ) = match analysis_result {
         Ok(result) => result,
         Err(err) => {
@@ -458,6 +460,7 @@ pub fn run(dry_run: bool) {
         dotfile_count,
         service_count,
         to_remove.len(),
+        config_package_count,
     );
 
     let had_uninstalled = !to_install.is_empty();

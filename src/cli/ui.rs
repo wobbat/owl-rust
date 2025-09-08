@@ -32,6 +32,7 @@ pub fn generate_apply_output_with_install(
     _dotfile_count: usize,
     service_count: usize,
     remove_count: usize,
+    managed_count: usize,
 ) {
     let host_name = crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
     println!("[{}]", colo::blue("info"));
@@ -45,7 +46,7 @@ pub fn generate_apply_output_with_install(
     );
     println!(
         "  managed pkgs: {}",
-        colo::bold(&(package_count + uninstalled_count).to_string())
+        colo::bold(&managed_count.to_string())
     );
     if service_count > 0 {
         println!("  services: {}", colo::bold(&service_count.to_string()));
