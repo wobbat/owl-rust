@@ -10,7 +10,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     }
 
     // Load configuration
-    let config = match crate::core::config::Config::load_all_relevant_config_files_with_pest(opts.global.use_pest) {
+    let config = match crate::core::config::Config::load_all_relevant_config_files() {
         Ok(config) => config,
         Err(err) => {
             eprintln!(

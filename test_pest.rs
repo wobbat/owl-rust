@@ -1,1 +1,0 @@
-use std::fs; use pest::Parser; use pest_derive::Parser; #[derive(Parser)] #[grammar = "src/config.pest"] struct ConfigParser; fn main() { let content = fs::read_to_string("/home/wobbat/.owl/main.owl").unwrap(); println!("Content: {:?}", content); let result = ConfigParser::parse(crate::Rule::config, &content); println!("Parse result: {:?}", result); }

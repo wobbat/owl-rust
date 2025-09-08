@@ -7,7 +7,6 @@ use crate::internal::constants;
 pub struct GlobalFlags {
     pub verbose: bool,
     pub dry_run: bool,
-    pub use_pest: bool,
 }
 
 /// Available commands for the CLI
@@ -29,24 +28,21 @@ pub struct CliOptions {
     pub cmd: Command,
 }
 
-/// Parse global flags (-v/--verbose, --dr, --pest) and return (verbose, dry_run, use_pest, remaining_args)
-pub fn parse_global_flags(args: &[String]) -> (bool, bool, bool, Vec<String>) {
+/// Parse global flags (-v/--verbose, --dr) and return (verbose, dry_run, remaining_args)
+pub fn parse_global_flags(args: &[String]) -> (bool, bool, Vec<String>) {
     let mut verbose = false;
     let mut dry_run = false;
-    let mut use_pest = false;
     let mut filtered_args = Vec::new();
     for arg in args {
         if arg == "-v" || arg == "--verbose" {
             verbose = true;
         } else if arg == "--dr" {
             dry_run = true;
-        } else if arg == "--pest" {
-            use_pest = true;
         } else {
             filtered_args.push(arg.clone());
         }
     }
-    (verbose, dry_run, use_pest, filtered_args)
+    (verbose, dry_run, filtered_args)
 }
 
 /// Parse command from filtered arguments
@@ -213,12 +209,12 @@ pub fn execute_command(opts: &CliOptions) {
         Command::Adopt { items, all } => adopt::run(items, *all),
         Command::ConfigCheck { file } => {
             if let Some(f) = file {
-                if let Err(err) = crate::core::config::run_configcheck_with_pest(f, opts.global.use_pest) {
+                if let Err(err) = crate::core::config::run_configcheck(f) {
                     eprintln!("{}", colo::red(&err.to_string()));
                     std::process::exit(1);
                 }
             } else {
-                if let Err(err) = crate::core::config::run_full_configcheck_with_pest(opts.global.use_pest) {
+                if let Err(err) = crate::core::config::run_full_configcheck() {
                     eprintln!("{}", colo::red(&err.to_string()));
                     std::process::exit(1);
                 }
@@ -235,7 +231,7 @@ pub fn execute_command(opts: &CliOptions) {
 
 /// Parse command line arguments and execute the corresponding command
 pub fn parse_and_execute(args: Vec<String>) {
-    let (verbose, dry_run, use_pest, filtered_args) = parse_global_flags(&args);
+    let (verbose, dry_run, filtered_args) = parse_global_flags(&args);
     let cmd = match parse_command(&filtered_args) {
         Ok(cmd) => cmd,
         Err(err) => {
@@ -244,7 +240,7 @@ pub fn parse_and_execute(args: Vec<String>) {
         }
     };
     let opts = CliOptions {
-        global: GlobalFlags { verbose, dry_run, use_pest },
+        global: GlobalFlags { verbose, dry_run },
         cmd,
     };
     execute_command(&opts);

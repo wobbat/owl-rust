@@ -33,15 +33,15 @@ type Analysis = (
     usize,                          // config_package_count
 );
 
-fn analyze_system(use_pest: bool) -> Result<Analysis, String> {
+fn analyze_system() -> Result<Analysis, String> {
     use std::thread;
 
     // Run independent, potentially slow operations in parallel
     // 1) Count upgradable packages
     let count_handle = thread::spawn(|| crate::core::package::get_package_count());
     // 2) Load config files
-    let config_handle = thread::spawn(move || {
-        crate::core::config::Config::load_all_relevant_config_files_with_pest(use_pest)
+    let config_handle = thread::spawn(|| {
+        crate::core::config::Config::load_all_relevant_config_files()
             .map_err(|e| e.to_string())
     });
     // 3) Load package state from disk
@@ -418,8 +418,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     }
 
     // Perform analysis with spinner
-    let use_pest = opts.global.use_pest;
-    let analysis_result = crate::internal::util::run_with_spinner(move || analyze_system(use_pest), "Analyzing system configuration");
+    let analysis_result = crate::internal::util::run_with_spinner(|| analyze_system(), "Analyzing system configuration");
 
     let (
         package_count,
