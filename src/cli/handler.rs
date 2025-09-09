@@ -213,19 +213,19 @@ pub fn execute_command(opts: &CliOptions) {
         Command::Adopt { items, all } => adopt::run(items, *all),
         Command::ConfigCheck { file } => {
             if let Some(f) = file {
-                if let Err(err) = crate::core::config::run_configcheck(f) {
+                if let Err(err) = crate::core::config::validator::run_configcheck(f) {
                     eprintln!("{}", colo::red(&err.to_string()));
                     std::process::exit(1);
                 }
             } else {
-                if let Err(err) = crate::core::config::run_full_configcheck() {
+                if let Err(err) = crate::core::config::validator::run_full_configcheck() {
                     eprintln!("{}", colo::red(&err.to_string()));
                     std::process::exit(1);
                 }
             }
         }
         Command::ConfigHost => {
-            if let Err(err) = crate::core::config::run_confighost() {
+            if let Err(err) = crate::core::config::validator::run_confighost() {
                 eprintln!("{}", colo::red(&err.to_string()));
                 std::process::exit(1);
             }
