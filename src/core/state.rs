@@ -148,7 +148,9 @@ mod tests {
     #[test]
     fn test_load_initial_state() {
         let temp_dir = tempdir().unwrap();
-        std::env::set_var("HOME", temp_dir.path());
+        unsafe {
+            std::env::set_var("HOME", temp_dir.path());
+        }
         let state = PackageState::load().unwrap();
         assert!(!state.untracked.is_empty());
         assert!(state.is_untracked("linux"));
@@ -158,7 +160,9 @@ mod tests {
     #[test]
     fn test_add_remove_untracked() {
         let temp_dir = tempdir().unwrap();
-        std::env::set_var("HOME", temp_dir.path());
+        unsafe {
+            std::env::set_var("HOME", temp_dir.path());
+        }
         let mut state = PackageState::load().unwrap();
         state.add_untracked("test-package".to_string());
         assert!(state.is_untracked("test-package"));

@@ -113,7 +113,7 @@ fn seed_managed_with_desired_installed(
     let mut changed = false;
     for pkg in config.packages.keys() {
         if !state.is_managed(pkg) {
-            match crate::core::package::is_package_installed(pkg) {
+            match crate::core::package::is_package_or_group_installed(pkg) {
                 Ok(true) => {
                     state.add_managed(pkg.to_string());
                     changed = true;
@@ -486,7 +486,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     if !dry_run {
         let mut changed = false;
         for pkg in &to_install {
-            match crate::core::package::is_package_installed(pkg) {
+            match crate::core::package::is_package_or_group_installed(pkg) {
                 Ok(true) => {
                     if !state.is_managed(pkg) {
                         state.add_managed(pkg.clone());

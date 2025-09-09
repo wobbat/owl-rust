@@ -32,7 +32,7 @@ pub fn plan_package_actions(
     let mut actions = Vec::new();
 
     for package in &desired {
-        if !installed.contains(package) {
+        if !is_package_or_group_installed(package)? {
             actions.push(PackageAction::Install { name: package.clone() });
         }
     }
@@ -80,11 +80,43 @@ pub fn get_package_count() -> Result<usize, String> {
 
 /// Check if a package is installed
 pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
-    if let Some(cached) = INSTALLED_CACHE.get() { return Ok(cached.contains(package_name)); }
+    if let Some(cached) = INSTALLED_CACHE.get() {
+        return Ok(cached.contains(package_name));
+    }
     let installed = query_installed_packages()?;
     let contains = installed.contains(package_name);
-    let _ = INSTALLED_CACHE.set(installed);
+    let _ = INSTALLED_CACHE.set(installed.clone());
     Ok(contains)
+}
+
+/// Check if a package or group is effectively installed
+/// For regular packages, checks if the package is installed
+/// For groups, checks if all packages in the group are installed
+pub fn is_package_or_group_installed(package_name: &str) -> Result<bool, String> {
+    // First check if it's a regular package
+    if is_package_installed(package_name)? {
+        return Ok(true);
+    }
+
+    // Check if it's a group
+    let pm = ParuPacman::new();
+    if pm.is_package_group(package_name)? {
+        // It's a group, check if all packages in the group are installed
+        let group_packages = pm.get_group_packages(package_name)?;
+        if group_packages.is_empty() {
+            return Ok(false);
+        }
+
+        for pkg in group_packages {
+            if !is_package_installed(&pkg)? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+
+    // Not a package or group
+    Ok(false)
 }
 
 /// Determine if a package is available in official repositories
@@ -144,5 +176,49 @@ mod tests {
         let (repo_packages, aur_packages) = result.unwrap();
         assert!(repo_packages.contains(&"bash".to_string()));
         assert!(aur_packages.contains(&"nonexistentpackage12345".to_string()));
+    }
+
+    #[test]
+    fn test_is_package_group() {
+        let pm = ParuPacman::new();
+        // Test with a known group (using pro-audio as it's in the list)
+        let result = pm.is_package_group("pro-audio");
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        // Test with a non-group package
+        let result = pm.is_package_group("bash");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+
+        // Test with a nonexistent package/group
+        let result = pm.is_package_group("nonexistentgroup12345");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_get_group_packages() {
+        let pm = ParuPacman::new();
+        // Test with a known group
+        let result = pm.get_group_packages("pro-audio");
+        assert!(result.is_ok());
+        let packages = result.unwrap();
+        assert!(!packages.is_empty());
+        // Should contain some packages
+        assert!(!packages.is_empty());
+    }
+
+    #[test]
+    fn test_is_package_or_group_installed() {
+        // Test with a regular package
+        let result = is_package_or_group_installed("bash");
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+
+        // Test with a group
+        let result = is_package_or_group_installed("pro-audio");
+        assert!(result.is_ok());
+        // This might be true or false depending on the system, but shouldn't error
     }
 }

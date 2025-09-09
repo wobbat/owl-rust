@@ -28,6 +28,8 @@ pub trait PackageManager {
     fn update_aur(&self, packages: &[String]) -> Result<(), String>;
     fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<(), String>;
     fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>, String>;
+    fn is_package_group(&self, package_name: &str) -> Result<bool, String>;
+    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>, String>;
 }
 
 pub struct ParuPacman;
@@ -275,6 +277,46 @@ impl PackageManager for ParuPacman {
         }
         let text = String::from_utf8_lossy(&output.stdout);
         parse_paru_search_output(&text)
+    }
+
+    fn is_package_group(&self, package_name: &str) -> Result<bool, String> {
+        let output = Command::new("pacman")
+            .args(["-Sg", package_name])
+            .output()
+            .map_err(|e| format!("Failed to check if {} is a group: {}", package_name, e))?;
+
+        // If pacman -Sg succeeds and returns output, it's a group
+        Ok(output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+    }
+
+    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>, String> {
+        let output = Command::new("pacman")
+            .args(["-Sg", group_name])
+            .output()
+            .map_err(|e| format!("Failed to get packages for group {}: {}", group_name, e))?;
+
+        if !output.status.success() {
+            return Err(format!("Failed to get packages for group {}", group_name));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut packages = Vec::new();
+
+        for line in stdout.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                // pacman -Sg output format is "group package_name"
+                // We want just the package name part
+                if let Some(space_pos) = line.find(' ') {
+                    let package = line[space_pos + 1..].trim();
+                    if !package.is_empty() {
+                        packages.push(package.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(packages)
     }
 }
 
