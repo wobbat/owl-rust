@@ -1,0 +1,226 @@
+# Owl Project Structural Refactoring Plan
+
+## Overview
+This plan outlines the steps to refactor the Owl codebase for better maintainability, testability, and scalability. The current structure is solid but has some large files and could benefit from better organization.
+
+## Phase 1: Break Down Large Files
+
+### 1.1 Refactor commands/apply.rs (~600 lines)
+Create `src/commands/apply/` directory with:
+
+#### 1.1.1 analyzer.rs
+- Move `analyze_system()` function
+- Move `seed_managed_with_desired_installed()` function
+- Move analysis-related helper functions
+
+#### 1.1.2 package_ops.rs
+- Move `run_combined_package_operations()` function
+- Move `categorize_install_sets()` function
+- Move `compute_aur_updates()` function
+- Move `install_repo_packages()` function
+- Move `handle_aur_operations()` function
+- Move `update_repo_packages()` function
+
+#### 1.1.3 dotfile_ops.rs
+- Move `apply_dotfiles_with_config()` function
+- Move dotfile-related helper functions
+
+#### 1.1.4 system_ops.rs
+- Move `handle_system_section_with_config()` function
+- Move service and environment handling functions
+
+#### 1.1.5 mod.rs
+- Update to expose new submodules
+- Keep main `run()` function in apply.rs or move to separate file
+
+### 1.2 Refactor core/config.rs (~700 lines)
+Create `src/core/config/` directory with:
+
+#### 1.2.1 parser.rs
+- Move all parsing logic from `parse_line()` and related functions
+- Move `parse_package_declaration()`, `parse_config_directive()`, etc.
+- Keep `Config` struct and basic methods
+
+#### 1.2.2 loader.rs
+- Move `load_all_relevant_config_files()` function
+- Move `load_config_if_exists()` function
+- Move `load_groups_with_precedence()` function
+- Move precedence merging logic
+
+#### 1.2.3 validator.rs
+- Move `run_configcheck()` function
+- Move `run_full_configcheck()` function
+- Move `run_confighost()` function
+- Move `get_uninstalled_packages()` function
+
+#### 1.2.4 mod.rs
+- Update to expose new submodules
+- Keep `Config` struct and core methods
+
+## Phase 2: Reorganize Core Modules
+
+### 2.1 Create core/config/ directory structure
+```
+src/core/config/
+├── mod.rs
+├── parser.rs
+├── loader.rs
+└── validator.rs
+```
+
+### 2.2 Create core/package/ directory structure
+```
+src/core/package/
+├── mod.rs
+├── manager.rs  # Extract from pm.rs
+└── actions.rs  # Extract package action logic
+```
+
+### 2.3 Create core/dotfiles/ directory structure
+```
+src/core/dotfiles/
+├── mod.rs
+├── mappings.rs  # Extract mapping logic
+└── operations.rs  # Extract operation logic
+```
+
+### 2.4 Update core/mod.rs
+- Update module declarations to use new structure
+- Ensure all submodules are properly exposed
+
+## Phase 3: Improve Command Organization
+
+### 3.1 Standardize Command Structure
+- Ensure each command in `commands/` has consistent structure
+- Each should have a clear `run()` function as entry point
+- Add `commands/utils.rs` for shared command utilities
+
+### 3.2 Consider Command Traits
+- Evaluate if commands should implement a common trait
+- Could improve consistency and testing
+
+## Phase 4: Internal Utilities Organization
+
+### 4.1 Create internal/ui/ directory
+```
+src/internal/ui/
+├── mod.rs
+├── prompts.rs  # Extract UI prompt logic
+└── display.rs  # Extract display utilities
+```
+
+### 4.2 Create internal/fs/ directory
+```
+src/internal/fs/
+├── mod.rs
+├── operations.rs  # File system operations
+└── paths.rs  # Path utilities
+```
+
+### 4.3 Update internal/mod.rs
+- Update module declarations
+- Keep `constants.rs` and `color.rs` as top-level
+
+## Phase 5: Add Integration Tests
+
+### 5.1 Create tests/ directory structure
+```
+tests/
+├── integration/
+│   ├── config_parsing.rs
+│   ├── command_execution.rs
+│   └── package_management.rs
+├── unit/
+│   ├── config/
+│   ├── commands/
+│   └── core/
+└── common/
+    └── test_utils.rs
+```
+
+### 5.2 Update Cargo.toml
+- Add test dependencies
+- Configure test organization
+
+## Phase 6: Update Build Configuration
+
+### 6.1 Update Cargo.toml
+- Update dependencies as needed
+- Keep binary-only configuration
+
+### 6.2 Update .gitignore
+- Ensure build artifacts are properly ignored
+- Add any new generated files
+
+## Phase 7: Migration and Testing
+
+### 8.1 Gradual Migration
+- Migrate one module at a time
+- Run tests after each change
+- Update imports as needed
+
+### 8.2 Update Documentation
+- Update README.md with new structure
+- Add module-level documentation
+- Update any existing docs
+
+### 8.3 Performance Testing
+- Ensure refactoring doesn't impact performance
+- Profile key operations
+
+## Implementation Order
+
+1. Start with Phase 1.1 (apply.rs) - Break down largest file first
+2. Phase 1.2 (config.rs) - Break down second largest file
+3. Phase 2 - Reorganize remaining core modules
+4. Phase 3 - Standardize commands
+5. Phase 4 - Organize internal utilities
+6. Phase 5 - Add comprehensive tests
+7. Phase 6 - Update build configuration
+8. Phase 7 - Final migration and testing
+
+## Risk Assessment
+
+### Low Risk
+- Creating new directories
+- Moving functions between files in same module
+- Adding utility files
+
+### Medium Risk
+- Splitting large files
+- Updating import paths
+- Changing module structure
+
+### High Risk
+- Major refactoring of core logic
+- Changes to public APIs
+- Build system changes
+
+## Success Criteria
+
+- All existing functionality preserved
+- All tests pass
+- No performance regressions
+- Code is more maintainable and testable
+- Clear module boundaries
+- Good documentation
+
+## Rollback Plan
+
+- Keep git commits small and focused
+- Use feature branches for major changes
+- Have backup of working state before major refactoring
+- Can revert individual phases if issues arise
+
+## Timeline Estimate
+
+- Phase 1: 4-6 hours (breaking down large files)
+- Phase 2: 2-3 hours (reorganizing core modules)
+- Phase 3: 1-2 hours (standardizing commands)
+- Phase 4: 1-2 hours (organizing internal utilities)
+- Phase 5: 2-3 hours (adding tests)
+- Phase 6: 1 hour (updating build configuration)
+- Phase 7: 2-3 hours (migration and testing)
+
+Total: 13-20 hours depending on complexity and testing</content>
+</xai:function_call name
