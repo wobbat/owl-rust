@@ -146,7 +146,8 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() {
             return Ok(());
         }
-        let args = ["--repo", "-S", "--noconfirm"];
+        let mut args = vec!["--repo", "-S", "--noconfirm"];
+        args.extend(packages.iter().map(|s| s.as_str()));
         let status = crate::internal::util::run_command_with_spinner(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
@@ -162,7 +163,7 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() {
             return Ok(());
         }
-        let mut args = vec!["--aur", "-S", "--noconfirm"];
+        let mut args = vec!["--aur", "-S", "--noconfirm", "--skipreview", "--noprovides", "--noupgrademenu"];
         args.extend(packages.iter().map(|s| s.as_str()));
         let status = crate::internal::util::run_command_with_spinner(
             crate::internal::constants::PACKAGE_MANAGER,

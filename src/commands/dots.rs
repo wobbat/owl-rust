@@ -4,7 +4,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
-            crate::internal::color::blue("ℹ")
+            crate::internal::color::blue("info:")
         );
         println!();
     }
@@ -29,7 +29,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     println!("[{}]", crate::internal::color::green("config"));
 
     if mappings.is_empty() {
-        println!("  {} No dotfiles configured", crate::internal::color::blue("ℹ"));
+        println!("  {} No dotfiles configured", crate::internal::color::blue("info:"));
         return;
     }
 

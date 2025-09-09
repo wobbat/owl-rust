@@ -37,7 +37,7 @@ pub fn handle_environment_combined(config: &crate::core::config::Config, dry_run
     if vars.is_empty() { return Ok(()); }
 
     if dry_run {
-        println!("  {} Plan:", crate::internal::color::blue("ℹ"));
+        println!("  {} Plan:", crate::internal::color::blue("info:"));
         for (k, v) in &vars {
             println!("    ✓ Would export {}={} (shells)", crate::internal::color::yellow(k), crate::internal::color::green(v));
         }

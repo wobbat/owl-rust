@@ -150,7 +150,7 @@ fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::core:
         }
         println!(
             "  {} Would remove {} package(s)",
-            crate::internal::color::blue("ℹ"),
+            crate::internal::color::blue("info:"),
             to_remove.len()
         );
         return;
@@ -191,6 +191,7 @@ fn run_combined_package_operations(
     _dotfile_count: usize,
     _env_var_count: usize,
     dry_run: bool,
+    non_interactive: bool,
     config: &crate::core::config::Config,
 ) {
     // First, handle uninstalled packages
@@ -226,7 +227,7 @@ fn run_combined_package_operations(
             );
         }
 
-        handle_aur_operations(&all_aur_packages, &aur_to_install, &aur_to_update, dry_run);
+        handle_aur_operations(&all_aur_packages, &aur_to_install, &aur_to_update, dry_run, non_interactive);
     }
 
     // Add blank line if we installed packages before this
@@ -288,7 +289,7 @@ fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
     if dry_run {
         println!(
             "  {} Would install {} from official repositories",
-            crate::internal::color::blue("ℹ"),
+            crate::internal::color::blue("info:"),
             repo_to_install.join(", ")
         );
     } else {
@@ -303,12 +304,13 @@ fn handle_aur_operations(
     aur_to_install: &[String],
     aur_to_update: &[String],
     dry_run: bool,
+    non_interactive: bool,
 ) {
-    if dry_run || crate::cli::ui::confirm_aur_operation(all_aur_packages, "installing/updating") {
+    if dry_run || non_interactive || crate::cli::ui::confirm_aur_operation(all_aur_packages, "installing/updating") {
         if dry_run {
             println!(
                 "  {} Would install/update {} from AUR",
-                crate::internal::color::blue("ℹ"),
+                crate::internal::color::blue("info:"),
                 all_aur_packages.join(", ")
             );
             return;
@@ -335,7 +337,7 @@ fn update_repo_packages(dry_run: bool) {
     if dry_run {
         println!(
             "  {} Would update official repository packages",
-            crate::internal::color::blue("ℹ")
+            crate::internal::color::blue("info:")
         );
         return;
     }
@@ -365,7 +367,7 @@ fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run: boo
     println!("[{}]", crate::internal::color::green("config"));
 
     if mappings.is_empty() {
-        println!("  {} No dotfiles configured", crate::internal::color::blue("ℹ"));
+        println!("  {} No dotfiles configured", crate::internal::color::blue("info:"));
         return;
     }
 
@@ -409,10 +411,11 @@ fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run: boo
 #[allow(clippy::collapsible_if)]
 pub fn run(opts: &crate::cli::handler::CliOptions) {
     let dry_run = opts.global.dry_run;
+    let non_interactive = opts.global.non_interactive;
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
-            crate::internal::color::blue("ℹ")
+            crate::internal::color::blue("info:")
         );
         println!();
     }
@@ -475,6 +478,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         dotfile_count,
         env_var_count,
         dry_run,
+        non_interactive,
         &config,
     );
 
@@ -532,7 +536,7 @@ fn handle_system_section_with_config(config: &crate::core::config::Config, dry_r
     // Handle services first
     if !services.is_empty() {
         if dry_run {
-            println!("  {} Plan:", crate::internal::color::blue("ℹ"));
+            println!("  {} Plan:", crate::internal::color::blue("info:"));
             for service in &services {
                 println!(
                     "    ✓ Would manage {} (system) [enable, start]",
@@ -541,7 +545,7 @@ fn handle_system_section_with_config(config: &crate::core::config::Config, dry_r
             }
             println!(
                 "  {} Planned {} service(s)",
-                crate::internal::color::blue("ℹ"),
+                crate::internal::color::blue("info:"),
                 services.len()
             );
             println!();

@@ -7,14 +7,15 @@ use crate::internal::constants;
 pub struct GlobalFlags {
     pub verbose: bool,
     pub dry_run: bool,
+    pub non_interactive: bool,
 }
 
 /// Available commands for the CLI
 #[derive(Debug, Clone)]
 pub enum Command {
-    Apply { dry_run: bool },
+    Apply,
     Edit { typ: String, arg: String },
-    Dots { dry_run: bool },
+    Dots,
     Add { items: Vec<String>, search: bool },
     Adopt { items: Vec<String>, all: bool },
     ConfigCheck { file: Option<String> },
@@ -28,27 +29,30 @@ pub struct CliOptions {
     pub cmd: Command,
 }
 
-/// Parse global flags (-v/--verbose, --dr) and return (verbose, dry_run, remaining_args)
-pub fn parse_global_flags(args: &[String]) -> (bool, bool, Vec<String>) {
+/// Parse global flags (-v/--verbose, --dr, -y/--non-interactive) and return (verbose, dry_run, non_interactive, remaining_args)
+pub fn parse_global_flags(args: &[String]) -> (bool, bool, bool, Vec<String>) {
     let mut verbose = false;
     let mut dry_run = false;
+    let mut non_interactive = false;
     let mut filtered_args = Vec::new();
     for arg in args {
         if arg == "-v" || arg == "--verbose" {
             verbose = true;
         } else if arg == "--dr" {
             dry_run = true;
+        } else if arg == "-y" || arg == "--non-interactive" {
+            non_interactive = true;
         } else {
             filtered_args.push(arg.clone());
         }
     }
-    (verbose, dry_run, filtered_args)
+    (verbose, dry_run, non_interactive, filtered_args)
 }
 
 /// Parse command from filtered arguments
 pub fn parse_command(filtered_args: &[String]) -> Result<Command, crate::error::OwlError> {
     if filtered_args.is_empty() {
-        return Ok(Command::Apply { dry_run: false });
+        return Ok(Command::Apply);
     }
 
     let cmd_str = &filtered_args[0];
@@ -95,13 +99,13 @@ fn parse_canonical_command(canonical_cmd: &str, mapped_args: &[String], original
 /// Parse apply command
 fn parse_apply_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     ensure_no_args(args, "apply command takes no arguments")?;
-    Ok(Command::Apply { dry_run: false })
+    Ok(Command::Apply)
 }
 
 /// Parse dots command
 fn parse_dots_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     ensure_no_args(args, "dots command takes no arguments")?;
-    Ok(Command::Dots { dry_run: false })
+    Ok(Command::Dots)
 }
 
 /// Parse edit command
@@ -197,14 +201,14 @@ pub fn execute_command(opts: &CliOptions) {
         println!("{}", colo::dim("[verbose] args parsed"));
     }
     match &opts.cmd {
-        Command::Apply { dry_run: _ } => apply::run(opts),
+        Command::Apply => apply::run(opts),
         Command::Edit { typ, arg } => {
             if let Err(err) = edit::run(typ, arg) {
                 eprintln!("{}", colo::red(&err));
                 std::process::exit(1);
             }
         }
-        Command::Dots { dry_run: _ } => dots::run(opts),
+        Command::Dots => dots::run(opts),
         Command::Add { items, search } => add::run(items, *search),
         Command::Adopt { items, all } => adopt::run(items, *all),
         Command::ConfigCheck { file } => {
@@ -231,7 +235,7 @@ pub fn execute_command(opts: &CliOptions) {
 
 /// Parse command line arguments and execute the corresponding command
 pub fn parse_and_execute(args: Vec<String>) {
-    let (verbose, dry_run, filtered_args) = parse_global_flags(&args);
+    let (verbose, dry_run, non_interactive, filtered_args) = parse_global_flags(&args);
     let cmd = match parse_command(&filtered_args) {
         Ok(cmd) => cmd,
         Err(err) => {
@@ -240,7 +244,7 @@ pub fn parse_and_execute(args: Vec<String>) {
         }
     };
     let opts = CliOptions {
-        global: GlobalFlags { verbose, dry_run },
+        global: GlobalFlags { verbose, dry_run, non_interactive },
         cmd,
     };
     execute_command(&opts);

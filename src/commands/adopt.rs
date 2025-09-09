@@ -64,7 +64,7 @@ pub fn run(items: &[String], all: bool) {
     if !skipped_already.is_empty() {
         println!(
             "{} Already managed: {}",
-            colo::blue("ℹ"),
+            colo::blue("info:"),
             skipped_already.join(", ")
         );
     }
