@@ -1,4 +1,4 @@
-use crate::commands::{add, adopt, apply, dots, edit};
+use crate::commands::{add, adopt, apply, dots, edit, find};
 use crate::internal::color as colo;
 use crate::internal::constants;
 
@@ -18,6 +18,7 @@ pub enum Command {
     Dots,
     Add { items: Vec<String>, search: bool },
     Adopt { items: Vec<String>, all: bool },
+    Find { query: Vec<String> },
     ConfigCheck { file: Option<String> },
     ConfigHost,
 }
@@ -67,30 +68,35 @@ pub fn parse_command(filtered_args: &[String]) -> Result<Command, crate::error::
 /// Resolve command aliases to their canonical form
 fn resolve_command_alias<'a>(cmd_str: &'a str, cmd_args: &[String]) -> (&'a str, Vec<String>) {
     match cmd_str {
-        constants::CMD_DE => (constants::CMD_EDIT, vec![
-            constants::EDIT_TYPE_DOTS.to_string(),
-            cmd_args.join(" ")
-        ]),
-        constants::CMD_CE => (constants::CMD_EDIT, vec![
-            constants::EDIT_TYPE_CONFIG.to_string(),
-            cmd_args.join(" ")
-        ]),
-        _ => (cmd_str, cmd_args.to_vec())
+        constants::CMD_DE => (
+            constants::CMD_EDIT,
+            vec![constants::EDIT_TYPE_DOTS.to_string(), cmd_args.join(" ")],
+        ),
+        constants::CMD_CE => (
+            constants::CMD_EDIT,
+            vec![constants::EDIT_TYPE_CONFIG.to_string(), cmd_args.join(" ")],
+        ),
+        _ => (cmd_str, cmd_args.to_vec()),
     }
 }
 
 /// Parse the canonical command and its arguments
-fn parse_canonical_command(canonical_cmd: &str, mapped_args: &[String], original_cmd: &str) -> Result<Command, crate::error::OwlError> {
+fn parse_canonical_command(
+    canonical_cmd: &str,
+    mapped_args: &[String],
+    original_cmd: &str,
+) -> Result<Command, crate::error::OwlError> {
     match canonical_cmd {
         constants::CMD_APPLY => parse_apply_command(mapped_args),
         constants::CMD_EDIT => parse_edit_command(mapped_args),
         constants::CMD_DOTS => parse_dots_command(mapped_args),
         constants::CMD_ADD => parse_add_command(mapped_args),
         constants::CMD_ADOPT => parse_adopt_command(mapped_args),
+        constants::CMD_FIND => parse_find_command(mapped_args),
         constants::CMD_CONFIGCHECK => parse_configcheck_command(mapped_args),
         constants::CMD_CONFIGHOST => parse_confighost_command(mapped_args),
         _ => Err(crate::error::OwlError::InvalidArguments(format!(
-            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, adopt, configcheck, confighost",
+            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, adopt, find, configcheck, confighost",
             original_cmd
         ))),
     }
@@ -115,14 +121,18 @@ fn parse_edit_command(args: &[String]) -> Result<Command, crate::error::OwlError
         let arg = args[1..].join(" ");
         Ok(Command::Edit { typ, arg })
     } else {
-        Err(crate::error::OwlError::InvalidArguments("edit command requires type and argument".to_string()))
+        Err(crate::error::OwlError::InvalidArguments(
+            "edit command requires type and argument".to_string(),
+        ))
     }
 }
 
 /// Parse add command
 fn parse_add_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     if args.is_empty() {
-        return Err(crate::error::OwlError::InvalidArguments("add command requires at least one item".to_string()));
+        return Err(crate::error::OwlError::InvalidArguments(
+            "add command requires at least one item".to_string(),
+        ));
     }
 
     // Check for --search flag
@@ -138,10 +148,15 @@ fn parse_add_command(args: &[String]) -> Result<Command, crate::error::OwlError>
     }
 
     if items.is_empty() {
-        return Err(crate::error::OwlError::InvalidArguments("add command requires at least one item".to_string()));
+        return Err(crate::error::OwlError::InvalidArguments(
+            "add command requires at least one item".to_string(),
+        ));
     }
 
-    Ok(Command::Add { items, search: search_mode })
+    Ok(Command::Add {
+        items,
+        search: search_mode,
+    })
 }
 
 /// Parse adopt command
@@ -155,7 +170,11 @@ fn parse_adopt_command(args: &[String]) -> Result<Command, crate::error::OwlErro
     let mut all = false;
     let mut items = Vec::new();
     for arg in args {
-        if arg == "--all" { all = true; } else { items.push(arg.clone()); }
+        if arg == "--all" {
+            all = true;
+        } else {
+            items.push(arg.clone());
+        }
     }
 
     if !all && items.is_empty() {
@@ -172,9 +191,13 @@ fn parse_configcheck_command(args: &[String]) -> Result<Command, crate::error::O
     if args.is_empty() {
         Ok(Command::ConfigCheck { file: None })
     } else if args.len() == 1 {
-        Ok(Command::ConfigCheck { file: Some(args[0].clone()) })
+        Ok(Command::ConfigCheck {
+            file: Some(args[0].clone()),
+        })
     } else {
-        Err(crate::error::OwlError::InvalidArguments("configcheck command takes at most one .owl file argument".to_string()))
+        Err(crate::error::OwlError::InvalidArguments(
+            "configcheck command takes at most one .owl file argument".to_string(),
+        ))
     }
 }
 
@@ -183,15 +206,32 @@ fn parse_confighost_command(args: &[String]) -> Result<Command, crate::error::Ow
     if args.is_empty() {
         Ok(Command::ConfigHost)
     } else {
-        Err(crate::error::OwlError::InvalidArguments("confighost command takes no arguments".to_string()))
+        Err(crate::error::OwlError::InvalidArguments(
+            "confighost command takes no arguments".to_string(),
+        ))
     }
+}
+
+/// Parse find command
+fn parse_find_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
+    if args.is_empty() {
+        return Err(crate::error::OwlError::InvalidArguments(
+            "find command requires at least one argument".to_string(),
+        ));
+    }
+
+    Ok(Command::Find {
+        query: args.to_vec(),
+    })
 }
 
 fn ensure_no_args(args: &[String], message: &str) -> Result<(), crate::error::OwlError> {
     if args.is_empty() {
         Ok(())
     } else {
-        Err(crate::error::OwlError::InvalidArguments(message.to_string()))
+        Err(crate::error::OwlError::InvalidArguments(
+            message.to_string(),
+        ))
     }
 }
 
@@ -211,6 +251,7 @@ pub fn execute_command(opts: &CliOptions) {
         Command::Dots => dots::run(opts),
         Command::Add { items, search } => add::run(items, *search),
         Command::Adopt { items, all } => adopt::run(items, *all),
+        Command::Find { query } => find::run(query),
         Command::ConfigCheck { file } => {
             if let Some(f) = file {
                 if let Err(err) = crate::core::config::validator::run_configcheck(f) {
@@ -244,7 +285,11 @@ pub fn parse_and_execute(args: Vec<String>) {
         }
     };
     let opts = CliOptions {
-        global: GlobalFlags { verbose, dry_run, non_interactive },
+        global: GlobalFlags {
+            verbose,
+            dry_run,
+            non_interactive,
+        },
         cmd,
     };
     execute_command(&opts);

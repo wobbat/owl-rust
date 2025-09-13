@@ -1,10 +1,10 @@
 //! Package management utilities
 
+use crate::core::config::Config;
+use crate::core::pm::{PackageManager, ParuPacman, SearchResult};
+use crate::core::state::PackageState;
 use std::collections::HashSet;
 use std::sync::OnceLock;
-use crate::core::pm::{PackageManager, ParuPacman, SearchResult};
-use crate::core::config::Config;
-use crate::core::state::PackageState;
 
 /// Package action types for planning installations and removals
 #[derive(Debug, Clone, PartialEq)]
@@ -24,7 +24,7 @@ fn query_installed_packages() -> Result<HashSet<String>, String> {
 /// Plan package actions by comparing desired config with installed packages
 pub fn plan_package_actions(
     config: &Config,
-    state: &PackageState
+    state: &PackageState,
 ) -> Result<Vec<PackageAction>, String> {
     let installed = get_installed_packages()?;
     let desired: HashSet<String> = config.packages.keys().cloned().collect();
@@ -33,13 +33,17 @@ pub fn plan_package_actions(
 
     for package in &desired {
         if !is_package_or_group_installed(package)? {
-            actions.push(PackageAction::Install { name: package.clone() });
+            actions.push(PackageAction::Install {
+                name: package.clone(),
+            });
         }
     }
 
     for package in &installed {
         if !desired.contains(package) && state.is_managed(package) {
-            actions.push(PackageAction::Remove { name: package.clone() });
+            actions.push(PackageAction::Remove {
+                name: package.clone(),
+            });
         }
     }
 
@@ -58,7 +62,9 @@ pub fn get_installed_packages() -> Result<HashSet<String>, String> {
 
 /// Remove unmanaged packages
 pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(), String> {
-    if packages.is_empty() { return Ok(()); }
+    if packages.is_empty() {
+        return Ok(());
+    }
     println!("Package cleanup (removing conflicting packages):");
     for package in packages {
         println!(
@@ -72,7 +78,9 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
 
 /// Get the count of packages that can be upgraded
 pub fn get_package_count() -> Result<usize, String> {
-    if let Some(cached) = PACKAGE_COUNT_CACHE.get() { return Ok(*cached); }
+    if let Some(cached) = PACKAGE_COUNT_CACHE.get() {
+        return Ok(*cached);
+    }
     let count = ParuPacman::new().upgrade_count()?;
     let _ = PACKAGE_COUNT_CACHE.set(count);
     Ok(count)
@@ -128,13 +136,18 @@ pub fn is_repo_package(package_name: &str) -> Result<bool, String> {
 
 /// Categorize packages into repo and AUR lists
 pub fn categorize_packages(packages: &[String]) -> Result<(Vec<String>, Vec<String>), String> {
-    if packages.is_empty() { return Ok((Vec::new(), Vec::new())); }
+    if packages.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
     let available = ParuPacman::new().batch_repo_available(packages)?;
     let mut repo_packages = Vec::new();
     let mut aur_packages = Vec::new();
     for p in packages {
-        if available.contains(p) { repo_packages.push(p.clone()); }
-        else { aur_packages.push(p.clone()); }
+        if available.contains(p) {
+            repo_packages.push(p.clone());
+        } else {
+            aur_packages.push(p.clone());
+        }
     }
     Ok((repo_packages, aur_packages))
 }

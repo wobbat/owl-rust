@@ -24,17 +24,43 @@ pub fn open_editor(path: &str) -> Result<(), String> {
 
 /// Find a config file in the standard locations
 pub fn find_config_file(arg: &str) -> Result<String, String> {
-    let home = env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
 
     let base_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
     let search_paths = [
-        format!("{}/{}{}", base_dir, arg, crate::internal::constants::OWL_EXT),
+        format!(
+            "{}/{}{}",
+            base_dir,
+            arg,
+            crate::internal::constants::OWL_EXT
+        ),
         format!("{}/{}", base_dir, arg),
-        format!("{}/{}/{}{}", base_dir, crate::internal::constants::HOSTS_DIR, arg, crate::internal::constants::OWL_EXT),
-        format!("{}/{}/{}", base_dir, crate::internal::constants::HOSTS_DIR, arg),
-        format!("{}/{}/{}{}", base_dir, crate::internal::constants::GROUPS_DIR, arg, crate::internal::constants::OWL_EXT),
-        format!("{}/{}/{}", base_dir, crate::internal::constants::GROUPS_DIR, arg),
+        format!(
+            "{}/{}/{}{}",
+            base_dir,
+            crate::internal::constants::HOSTS_DIR,
+            arg,
+            crate::internal::constants::OWL_EXT
+        ),
+        format!(
+            "{}/{}/{}",
+            base_dir,
+            crate::internal::constants::HOSTS_DIR,
+            arg
+        ),
+        format!(
+            "{}/{}/{}{}",
+            base_dir,
+            crate::internal::constants::GROUPS_DIR,
+            arg,
+            crate::internal::constants::OWL_EXT
+        ),
+        format!(
+            "{}/{}/{}",
+            base_dir,
+            crate::internal::constants::GROUPS_DIR,
+            arg
+        ),
     ];
 
     for path in &search_paths {
@@ -48,8 +74,7 @@ pub fn find_config_file(arg: &str) -> Result<String, String> {
 
 /// Get the path for a dotfile
 pub fn get_dotfile_path(filename: &str) -> Result<String, String> {
-    let home = env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
 
     Ok(format!(
         "{}/{}/{}/{}",

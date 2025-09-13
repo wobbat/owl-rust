@@ -15,7 +15,11 @@ pub fn run(typ: &str, arg: &str) -> Result<(), String> {
             let path = files::find_config_file(arg)?;
             files::open_editor(&path)
         }
-        _ => Err(format!("invalid edit type '{}'. Must be '{}' or '{}'",
-            typ, crate::internal::constants::EDIT_TYPE_DOTS, crate::internal::constants::EDIT_TYPE_CONFIG)),
+        _ => Err(format!(
+            "invalid edit type '{}'. Must be '{}' or '{}'",
+            typ,
+            crate::internal::constants::EDIT_TYPE_DOTS,
+            crate::internal::constants::EDIT_TYPE_CONFIG
+        )),
     }
 }

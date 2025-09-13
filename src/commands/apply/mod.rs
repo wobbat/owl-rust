@@ -1,6 +1,6 @@
 pub mod analysis;
-pub mod packages;
 pub mod dotfiles;
+pub mod packages;
 pub mod system;
 
 /// Run the apply command to update packages and system
@@ -17,7 +17,10 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     }
 
     // Perform analysis with spinner
-    let analysis_result = crate::internal::util::run_with_spinner(|| analysis::analyze_system(), "Analyzing system configuration");
+    let analysis_result = crate::internal::util::run_with_spinner(
+        || analysis::analyze_system(),
+        "Analyzing system configuration",
+    );
 
     let (
         package_count,

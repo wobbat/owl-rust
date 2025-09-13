@@ -24,12 +24,18 @@ impl Config {
         Self::load_config_if_exists(&mut config, &main_config_path)?;
 
         // 2. Load host-specific config (medium priority)
-        let hostname = std::fs::read_to_string("/etc/hostname")?.trim().to_string();
-        let host_config_path = owl_root.join("hosts").join(format!("{}.owl", hostname));
+        let hostname = crate::internal::constants::get_host_name()?;
+        let host_config_path = owl_root
+            .join(crate::internal::constants::HOSTS_DIR)
+            .join(format!(
+                "{}{}",
+                hostname,
+                crate::internal::constants::OWL_EXT
+            ));
         Self::load_config_if_exists(&mut config, &host_config_path)?;
 
         // 3. Load group configs (lowest priority)
-        let groups_path = owl_root.join("groups");
+        let groups_path = owl_root.join(crate::internal::constants::GROUPS_DIR);
         if groups_path.exists() && groups_path.is_dir() {
             let mut processed_groups = HashSet::new();
             Self::load_groups_with_precedence(&groups_path, &mut config, &mut processed_groups)?;
@@ -62,7 +68,11 @@ impl Config {
             }
             processed_groups.insert(group_name.clone());
 
-            let group_file = groups_path.join(format!("{}.owl", group_name));
+            let group_file = groups_path.join(format!(
+                "{}{}",
+                group_name,
+                crate::internal::constants::OWL_EXT
+            ));
             if group_file.exists() {
                 let group_config = Self::parse_file(&group_file)?;
                 // Add any new groups found in this group file
@@ -80,7 +90,7 @@ impl Config {
     }
 
     // New function that implements precedence (higher priority completely replaces lower priority)
-    fn merge_with_precedence(&mut self, other: Self) {
+    pub(crate) fn merge_with_precedence(&mut self, other: Self) {
         // Replace packages completely (higher priority wins)
         for (name, package) in other.packages {
             self.packages.insert(name, package);

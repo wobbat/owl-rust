@@ -25,14 +25,14 @@ pub fn count_environment_variables(config: &crate::core::config::Config) -> usiz
 }
 
 pub type Analysis = (
-    usize,                          // package_count
-    crate::core::config::Config,          // config
-    crate::core::state::PackageState,     // state
+    usize,                                    // package_count
+    crate::core::config::Config,              // config
+    crate::core::state::PackageState,         // state
     Vec<crate::core::package::PackageAction>, // actions
-    usize,                          // dotfile_count
-    usize,                          // env_var_count
-    usize,                          // service_count
-    usize,                          // config_package_count
+    usize,                                    // dotfile_count
+    usize,                                    // env_var_count
+    usize,                                    // service_count
+    usize,                                    // config_package_count
 );
 
 pub fn analyze_system() -> Result<Analysis, String> {
@@ -43,8 +43,7 @@ pub fn analyze_system() -> Result<Analysis, String> {
     let count_handle = thread::spawn(|| crate::core::package::get_package_count());
     // 2) Load config files
     let config_handle = thread::spawn(|| {
-        crate::core::config::Config::load_all_relevant_config_files()
-            .map_err(|e| e.to_string())
+        crate::core::config::Config::load_all_relevant_config_files().map_err(|e| e.to_string())
     });
     // 3) Load package state from disk
     let state_handle = thread::spawn(|| crate::core::state::PackageState::load());

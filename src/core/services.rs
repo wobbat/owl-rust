@@ -34,30 +34,57 @@ fn check_active(service: &str) -> Result<bool, String> {
 
 pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, String> {
     if services.is_empty() {
-        return Ok(ServiceResult { changed: false, enabled_services: Vec::new(), started_services: Vec::new(), failed_services: Vec::new() });
+        return Ok(ServiceResult {
+            changed: false,
+            enabled_services: Vec::new(),
+            started_services: Vec::new(),
+            failed_services: Vec::new(),
+        });
     }
 
-    let mut result = ServiceResult { changed: false, enabled_services: Vec::new(), started_services: Vec::new(), failed_services: Vec::new() };
+    let mut result = ServiceResult {
+        changed: false,
+        enabled_services: Vec::new(),
+        started_services: Vec::new(),
+        failed_services: Vec::new(),
+    };
     for service in services {
         // Enable only if not enabled
         match check_enabled(service) {
             Ok(true) => {}
             Ok(false) => {
-                match Command::new("sudo").arg("systemctl").arg("enable").arg(service).status() {
+                match Command::new("sudo")
+                    .arg("systemctl")
+                    .arg("enable")
+                    .arg(service)
+                    .status()
+                {
                     Ok(status) if status.success() => {
                         result.changed = true;
                         result.enabled_services.push(service.clone());
                     }
                     Ok(_) | Err(_) => {
                         result.failed_services.push(service.clone());
-                        eprintln!("{}", crate::internal::color::red(&format!("Failed to enable service {}", service)));
+                        eprintln!(
+                            "{}",
+                            crate::internal::color::red(&format!(
+                                "Failed to enable service {}",
+                                service
+                            ))
+                        );
                         continue;
                     }
                 }
             }
             Err(e) => {
                 result.failed_services.push(service.clone());
-                eprintln!("{}", crate::internal::color::red(&format!("Service {} status check failed (enabled): {}", service, e)));
+                eprintln!(
+                    "{}",
+                    crate::internal::color::red(&format!(
+                        "Service {} status check failed (enabled): {}",
+                        service, e
+                    ))
+                );
                 continue;
             }
         }
@@ -66,21 +93,38 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
         match check_active(service) {
             Ok(true) => {}
             Ok(false) => {
-                match Command::new("sudo").arg("systemctl").arg("start").arg(service).status() {
+                match Command::new("sudo")
+                    .arg("systemctl")
+                    .arg("start")
+                    .arg(service)
+                    .status()
+                {
                     Ok(status) if status.success() => {
                         result.changed = true;
                         result.started_services.push(service.clone());
                     }
                     Ok(_) | Err(_) => {
                         result.failed_services.push(service.clone());
-                        eprintln!("{}", crate::internal::color::red(&format!("Failed to start service {}", service)));
+                        eprintln!(
+                            "{}",
+                            crate::internal::color::red(&format!(
+                                "Failed to start service {}",
+                                service
+                            ))
+                        );
                         continue;
                     }
                 }
             }
             Err(e) => {
                 result.failed_services.push(service.clone());
-                eprintln!("{}", crate::internal::color::red(&format!("Service {} status check failed (active): {}", service, e)));
+                eprintln!(
+                    "{}",
+                    crate::internal::color::red(&format!(
+                        "Service {} status check failed (active): {}",
+                        service, e
+                    ))
+                );
                 continue;
             }
         }
@@ -92,7 +136,9 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
 pub fn get_configured_services(config: &crate::core::config::Config) -> Vec<String> {
     let mut services = Vec::new();
     for (_name, pkg) in &config.packages {
-        if let Some(ref svc) = pkg.service { services.push(svc.clone()); }
+        if let Some(ref svc) = pkg.service {
+            services.push(svc.clone());
+        }
     }
     services.sort();
     services.dedup();

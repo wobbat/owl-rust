@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-pub mod parser;
 pub mod loader;
+pub mod parser;
 pub mod validator;
 
 #[derive(Debug, Clone, serde::Serialize)]

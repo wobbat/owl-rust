@@ -7,14 +7,15 @@ pub fn run(items: &[String], _search_mode: bool) {
     run_search_mode(items);
 }
 
-
-
 /// Search and select mode - add to config instead of installing
 fn run_search_mode(terms: &[String]) {
     match crate::core::package::search_packages(terms) {
         Ok(results) => {
             if results.is_empty() {
-                println!("{}", crate::internal::color::yellow("No packages found matching the search terms"));
+                println!(
+                    "{}",
+                    crate::internal::color::yellow("No packages found matching the search terms")
+                );
                 return;
             }
 
@@ -38,15 +39,15 @@ fn run_search_mode(terms: &[String]) {
     }
 }
 
-
-
 /// Display search results in a formatted way
 // use crate::domain::package; // no direct uses
 use crate::core::pm::{PackageSource, SearchResult};
 fn display_search_results(results: &[SearchResult]) {
-    println!("\n{} {} package(s):\n",
+    println!(
+        "\n{} {} package(s):\n",
         crate::internal::color::bold("Found"),
-        results.len());
+        results.len()
+    );
 
     for (i, result) in results.iter().enumerate() {
         let num_str = number_brackets((results.len() - 1 - i) as i32);
@@ -54,9 +55,7 @@ fn display_search_results(results: &[SearchResult]) {
         let version = crate::internal::color::success(&result.ver);
 
         let tag = match result.source {
-            PackageSource::Aur => {
-                crate::internal::color::warning(&format!("[{}]", result.repo))
-            }
+            PackageSource::Aur => crate::internal::color::warning(&format!("[{}]", result.repo)),
             PackageSource::Repo => {
                 crate::internal::color::repository(&format!("[{}]", result.repo))
             }
@@ -69,13 +68,15 @@ fn display_search_results(results: &[SearchResult]) {
         };
 
         let desc = if !result.description.is_empty() {
-            format!(" - {}", crate::internal::color::description(&result.description))
+            format!(
+                " - {}",
+                crate::internal::color::description(&result.description)
+            )
         } else {
             String::new()
         };
 
-        println!("{}{} {}{} {}{}",
-            num_str, name, version, tag, status, desc);
+        println!("{}{} {}{} {}{}", num_str, name, version, tag, status, desc);
     }
     println!();
 }
@@ -87,7 +88,10 @@ fn prompt_package_selection(results: &[SearchResult]) -> Option<String> {
     }
 
     loop {
-        print!("Select package (0-{}, or 'c' to cancel): ", results.len() - 1);
+        print!(
+            "Select package (0-{}, or 'c' to cancel): ",
+            results.len() - 1
+        );
         std::io::Write::flush(&mut std::io::stdout()).ok()?;
 
         let mut input = String::new();
@@ -104,7 +108,10 @@ fn prompt_package_selection(results: &[SearchResult]) -> Option<String> {
                 return Some(results[index].name.clone());
             }
             _ => {
-                println!("{}", crate::internal::color::red("Invalid selection. Please try again."));
+                println!(
+                    "{}",
+                    crate::internal::color::red("Invalid selection. Please try again.")
+                );
             }
         }
     }
@@ -123,14 +130,23 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
         // Use main config if no relevant files found
         let main_config = get_main_config_path()?;
         add_package_to_file(package_name, &main_config)?;
-        println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, main_config)));
+        println!(
+            "{}",
+            crate::internal::color::success(&format!(
+                "Added '{}' to {}",
+                package_name, main_config
+            ))
+        );
         return Ok(());
     }
 
     if config_files.len() == 1 {
         let file_path = &config_files[0];
         add_package_to_file(package_name, file_path)?;
-        println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, file_path)));
+        println!(
+            "{}",
+            crate::internal::color::success(&format!("Added '{}' to {}", package_name, file_path))
+        );
         return Ok(());
     }
 
@@ -138,14 +154,20 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
     config_files.reverse();
 
     // Multiple files - prompt for selection
-    println!("\n{} {} config file(s):\n",
+    println!(
+        "\n{} {} config file(s):\n",
         crate::internal::color::bold("Found"),
-        config_files.len());
+        config_files.len()
+    );
 
     for (i, file) in config_files.iter().enumerate() {
         let num_str = number_brackets((config_files.len() - 1 - i) as i32);
         let friendly = file.replace(&std::env::var("HOME").unwrap_or_default(), "~");
-        println!("{} {}", num_str, crate::internal::color::highlight(&friendly));
+        println!(
+            "{} {}",
+            num_str,
+            crate::internal::color::highlight(&friendly)
+        );
     }
     println!();
 
@@ -154,11 +176,20 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
         Some(index) => {
             let file_path = &config_files[index];
             add_package_to_file(package_name, file_path)?;
-            println!("{}", crate::internal::color::success(&format!("Added '{}' to {}", package_name, file_path)));
+            println!(
+                "{}",
+                crate::internal::color::success(&format!(
+                    "Added '{}' to {}",
+                    package_name, file_path
+                ))
+            );
             Ok(())
         }
         None => {
-            println!("{}", crate::internal::color::yellow("No config file selected"));
+            println!(
+                "{}",
+                crate::internal::color::yellow("No config file selected")
+            );
             Ok(())
         }
     }
@@ -167,8 +198,8 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
 /// Get relevant config files for the current system
 #[allow(clippy::collapsible_if)]
 fn get_relevant_config_files() -> Result<Vec<String>, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
 
     let mut files = Vec::new();
@@ -209,8 +240,8 @@ fn get_relevant_config_files() -> Result<Vec<String>, String> {
 /// Get the main config file path
 fn get_main_config_path() -> Result<String, String> {
     use std::path::PathBuf;
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let path = PathBuf::from(home)
         .join(crate::internal::constants::OWL_DIR)
         .join(crate::internal::constants::MAIN_CONFIG_FILE);
@@ -223,15 +254,17 @@ fn add_package_to_file(package_name: &str, file_path: &str) -> Result<(), String
 
     // Read existing content
     let content = if std::path::Path::new(file_path).exists() {
-        fs::read_to_string(file_path)
-            .map_err(|e| format!("Failed to read config file: {}", e))?
+        fs::read_to_string(file_path).map_err(|e| format!("Failed to read config file: {}", e))?
     } else {
         String::new()
     };
 
     // Check if package already exists
     if content.lines().any(|line| line.trim() == package_name) {
-        return Err(format!("Package '{}' already exists in {}", package_name, file_path));
+        return Err(format!(
+            "Package '{}' already exists in {}",
+            package_name, file_path
+        ));
     }
 
     // Add package to @packages section or create one
@@ -289,7 +322,10 @@ fn prompt_file_selection(count: usize) -> Option<usize> {
                 return Some(index);
             }
             _ => {
-                println!("{}", crate::internal::color::red("Invalid selection. Please try again."));
+                println!(
+                    "{}",
+                    crate::internal::color::red("Invalid selection. Please try again.")
+                );
             }
         }
     }

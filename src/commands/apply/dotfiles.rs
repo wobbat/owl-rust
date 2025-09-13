@@ -10,7 +10,10 @@ pub fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run:
     println!("[{}]", crate::internal::color::green("config"));
 
     if mappings.is_empty() {
-        println!("  {} No dotfiles configured", crate::internal::color::blue("info:"));
+        println!(
+            "  {} No dotfiles configured",
+            crate::internal::color::blue("info:")
+        );
         return;
     }
 
@@ -20,7 +23,7 @@ pub fn apply_dotfiles_with_config(config: &crate::core::config::Config, dry_run:
         Err(err) => {
             eprintln!(
                 "{}",
-            crate::internal::color::red(&format!("Failed to analyze dotfiles: {}", err))
+                crate::internal::color::red(&format!("Failed to analyze dotfiles: {}", err))
             );
             return;
         }

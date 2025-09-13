@@ -15,7 +15,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         Err(err) => {
             eprintln!(
                 "{}",
-            crate::internal::color::red(&format!("Failed to load config: {}", err))
+                crate::internal::color::red(&format!("Failed to load config: {}", err))
             );
             std::process::exit(1);
         }
@@ -29,7 +29,10 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     println!("[{}]", crate::internal::color::green("config"));
 
     if mappings.is_empty() {
-        println!("  {} No dotfiles configured", crate::internal::color::blue("info:"));
+        println!(
+            "  {} No dotfiles configured",
+            crate::internal::color::blue("info:")
+        );
         return;
     }
 
@@ -39,7 +42,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         Err(err) => {
             eprintln!(
                 "{}",
-            crate::internal::color::red(&format!("Failed to analyze dotfiles: {}", err))
+                crate::internal::color::red(&format!("Failed to analyze dotfiles: {}", err))
             );
             std::process::exit(1);
         }
@@ -60,7 +63,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         Err(err) => {
             eprintln!(
                 "{}",
-            crate::internal::color::red(&format!("Failed to apply dotfiles: {}", err))
+                crate::internal::color::red(&format!("Failed to apply dotfiles: {}", err))
             );
             std::process::exit(1);
         }

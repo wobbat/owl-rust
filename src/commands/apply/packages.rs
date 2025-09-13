@@ -1,6 +1,10 @@
 use crate::core::pm::PackageManager;
 
-pub fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::core::state::PackageState) {
+pub fn handle_removals(
+    to_remove: &[String],
+    dry_run: bool,
+    state: &mut crate::core::state::PackageState,
+) {
     if to_remove.is_empty() {
         return;
     }
@@ -45,7 +49,10 @@ pub fn handle_removals(to_remove: &[String], dry_run: bool, state: &mut crate::c
     }
 
     if let Err(e) = state.save() {
-        eprintln!("{}", crate::internal::color::red(&format!("Failed to update package state: {}", e)));
+        eprintln!(
+            "{}",
+            crate::internal::color::red(&format!("Failed to update package state: {}", e))
+        );
     }
 }
 
@@ -93,7 +100,13 @@ pub fn run_combined_package_operations(
             );
         }
 
-        handle_aur_operations(&all_aur_packages, &aur_to_install, &aur_to_update, dry_run, non_interactive);
+        handle_aur_operations(
+            &all_aur_packages,
+            &aur_to_install,
+            &aur_to_update,
+            dry_run,
+            non_interactive,
+        );
     }
 
     // Add blank line if we installed packages before this
@@ -136,7 +149,7 @@ pub fn compute_aur_updates(dry_run: bool) -> Vec<String> {
         Err(e) => {
             eprintln!(
                 "{}",
-            crate::internal::color::red(&format!("Failed to check AUR updates: {}", e))
+                crate::internal::color::red(&format!("Failed to check AUR updates: {}", e))
             );
             Vec::new()
         }
@@ -172,7 +185,10 @@ pub fn handle_aur_operations(
     dry_run: bool,
     non_interactive: bool,
 ) {
-    if dry_run || non_interactive || crate::cli::ui::confirm_aur_operation(all_aur_packages, "installing/updating") {
+    if dry_run
+        || non_interactive
+        || crate::cli::ui::confirm_aur_operation(all_aur_packages, "installing/updating")
+    {
         if dry_run {
             println!(
                 "  {} Would install/update {} from AUR",

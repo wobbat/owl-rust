@@ -56,7 +56,9 @@ pub fn run_command_with_spinner(
             }
             Ok(None) => {
                 // Still running, continue
-                std::thread::sleep(Duration::from_millis(crate::internal::constants::SPINNER_DELAY_MS));
+                std::thread::sleep(Duration::from_millis(
+                    crate::internal::constants::SPINNER_DELAY_MS,
+                ));
                 i += 1;
             }
             Err(e) => {
@@ -162,7 +164,9 @@ where
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // Operation still running, continue spinning
-                thread::sleep(Duration::from_millis(crate::internal::constants::SPINNER_DELAY_MS));
+                thread::sleep(Duration::from_millis(
+                    crate::internal::constants::SPINNER_DELAY_MS,
+                ));
                 i += 1;
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -173,8 +177,6 @@ where
         }
     }
 }
-
-
 
 fn start_output_reader(stdout: std::process::ChildStdout, status: Arc<Mutex<String>>) {
     thread::spawn(move || {
@@ -212,7 +214,9 @@ fn extract_package_name(line: &str) -> Option<String> {
     if line.contains("upgrading") || line.contains("installing") {
         return line
             .split_whitespace()
-            .find(|word| word.contains('-') && word.chars().all(|c| c.is_alphanumeric() || c == '-'))
+            .find(|word| {
+                word.contains('-') && word.chars().all(|c| c.is_alphanumeric() || c == '-')
+            })
             .and_then(|word| word.split('-').next())
             .map(|s| s.to_string());
     }

@@ -42,14 +42,20 @@ pub fn handle_system_section_with_config(config: &crate::core::config::Config, d
                 Err(err) => {
                     eprintln!(
                         "{}",
-                        crate::internal::color::red(&format!("Failed to configure services: {}", err))
+                        crate::internal::color::red(&format!(
+                            "Failed to configure services: {}",
+                            err
+                        ))
                     );
                     return;
                 }
             };
 
             if result.changed {
-                println!("  {} Services configured", crate::internal::color::green("⸎"));
+                println!(
+                    "  {} Services configured",
+                    crate::internal::color::green("⸎")
+                );
                 println!();
                 println!(
                     "  {} Managed {} service(s)",
@@ -72,7 +78,10 @@ pub fn handle_system_section_with_config(config: &crate::core::config::Config, d
                 }
                 println!();
             } else {
-                println!("  {} Service state verified", crate::internal::color::green("⸎"));
+                println!(
+                    "  {} Service state verified",
+                    crate::internal::color::green("⸎")
+                );
             }
         }
     }
