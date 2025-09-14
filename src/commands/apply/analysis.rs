@@ -10,7 +10,7 @@ pub fn count_dotfile_packages(config: &crate::core::config::Config) -> usize {
     config
         .packages
         .values()
-        .filter(|pkg| pkg.config.is_some())
+        .filter(|pkg| !pkg.config.is_empty())
         .count()
 }
 

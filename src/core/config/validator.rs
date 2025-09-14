@@ -87,7 +87,7 @@ pub fn run_full_configcheck() -> Result<(), String> {
             let dotfile_count = config
                 .packages
                 .values()
-                .filter(|pkg| pkg.config.is_some())
+                .filter(|pkg| !pkg.config.is_empty())
                 .count();
             let service_count = config
                 .packages

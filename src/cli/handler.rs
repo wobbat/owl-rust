@@ -21,6 +21,7 @@ pub enum Command {
     Find { query: Vec<String> },
     ConfigCheck { file: Option<String> },
     ConfigHost,
+    Clean { filename: Option<String> },
 }
 
 /// Parsed command line options
@@ -95,8 +96,9 @@ fn parse_canonical_command(
         constants::CMD_FIND => parse_find_command(mapped_args),
         constants::CMD_CONFIGCHECK => parse_configcheck_command(mapped_args),
         constants::CMD_CONFIGHOST => parse_confighost_command(mapped_args),
+        constants::CMD_CLEAN => parse_clean_command(mapped_args),
         _ => Err(crate::error::OwlError::InvalidArguments(format!(
-            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, adopt, find, configcheck, confighost",
+            "Unknown command: {}. Available commands: apply, edit, de, ce, dots, add, adopt, find, configcheck, confighost, clean",
             original_cmd
         ))),
     }
@@ -212,6 +214,17 @@ fn parse_confighost_command(args: &[String]) -> Result<Command, crate::error::Ow
     }
 }
 
+/// Parse clean command
+fn parse_clean_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
+    match args.len() {
+        0 => Ok(Command::Clean { filename: None }),
+        1 => Ok(Command::Clean { filename: Some(args[0].clone()) }),
+        _ => Err(crate::error::OwlError::InvalidArguments(
+            "clean command takes at most one filename".to_string(),
+        )),
+    }
+}
+
 /// Parse find command
 fn parse_find_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     if args.is_empty() {
@@ -268,6 +281,23 @@ pub fn execute_command(opts: &CliOptions) {
         Command::ConfigHost => {
             if let Err(err) = crate::core::config::validator::run_confighost() {
                 eprintln!("{}", colo::red(&err.to_string()));
+                std::process::exit(1);
+            }
+        }
+        Command::Clean { filename } => {
+            let result = match filename {
+                Some(fname) => {
+                    let result = crate::commands::clean::handle_clean(&fname);
+                    if result.is_ok() {
+                        println!("[{}]", colo::blue("clean"));
+                        println!("  {} {}", colo::green("✓"), colo::dim(&fname));
+                    }
+                    result
+                },
+                None => crate::commands::clean::handle_clean_all(),
+            };
+            if let Err(err) = result {
+                eprintln!("{}", colo::red(&err));
                 std::process::exit(1);
             }
         }

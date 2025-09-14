@@ -138,6 +138,17 @@ fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) 
                     });
                 }
             }
+            // Search for :cfg directives
+            else if search_pattern == ":cfg" {
+                if trimmed.starts_with(":cfg ") {
+                    locations.push(Location {
+                        file_path: file_path.to_string(),
+                        line_number: line_num + 1,
+                        line_content: line.to_string(),
+                        context: LocationContext::ConfigDirective,
+                    });
+                }
+            }
             // Search for :service directives
             else if search_pattern == ":service" {
                 if trimmed.starts_with(":service ") {

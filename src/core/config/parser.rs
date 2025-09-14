@@ -44,7 +44,9 @@ impl Config {
         } else if line == "@packages" || line == "@pkgs" {
             Self::parse_packages_section(in_packages_section, current_package);
         } else if line.starts_with(":config ") {
-            Self::parse_config_directive(config, current_package, line)?;
+            Self::parse_config_directive(config, current_package, line, ":config ")?;
+        } else if line.starts_with(":cfg ") {
+            Self::parse_config_directive(config, current_package, line, ":cfg ")?;
         } else if line.starts_with(":service ") {
             Self::parse_service_directive(config, current_package, line)?;
         } else if line.starts_with(":env ") {
@@ -79,7 +81,7 @@ impl Config {
         config.packages.insert(
             name.clone(),
             Package {
-                config: None,
+                config: Vec::new(),
                 service: None,
                 env_vars: HashMap::new(),
             },
@@ -110,7 +112,7 @@ impl Config {
         config.packages.insert(
             package_name.clone(),
             Package {
-                config: None,
+                config: Vec::new(),
                 service: None,
                 env_vars: HashMap::new(),
             },
@@ -122,20 +124,21 @@ impl Config {
         config: &mut Config,
         current_package: &Option<String>,
         line: &str,
+        prefix: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let rest = line.strip_prefix(":config ").unwrap();
+        let rest = line.strip_prefix(prefix).unwrap();
         if let Some((source, sink)) = rest.split_once(" -> ") {
             if let Some(pkg_name) = current_package {
                 if let Some(package) = config.packages.get_mut(pkg_name) {
                     // Store the full source -> destination mapping
-                    package.config = Some(format!("{} -> {}", source.trim(), sink.trim()));
+                    package.config.push(format!("{} -> {}", source.trim(), sink.trim()));
                 }
             }
         } else {
             // Handle configs without explicit source (assume source is same as destination filename)
             if let Some(pkg_name) = current_package {
                 if let Some(package) = config.packages.get_mut(pkg_name) {
-                    package.config = Some(rest.trim().to_string());
+                    package.config.push(rest.trim().to_string());
                 }
             }
         }

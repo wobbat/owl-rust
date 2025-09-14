@@ -50,7 +50,7 @@ impl Config {
     ) -> Result<(), Box<dyn std::error::Error>> {
         if path.exists() {
             let loaded_config = Self::parse_file(path)?;
-            config.merge_with_precedence(loaded_config);
+            config.add_if_not_exists(loaded_config);
         }
         Ok(())
     }
@@ -81,29 +81,35 @@ impl Config {
                         groups_to_process.push(new_group.clone());
                     }
                 }
-                // Use precedence merge for groups (lowest priority)
-                config.merge_with_precedence(group_config);
+                // Add packages from group config only if not already defined
+                config.add_if_not_exists(group_config);
             }
         }
 
         Ok(())
     }
 
-    // New function that implements precedence (higher priority completely replaces lower priority)
-    pub(crate) fn merge_with_precedence(&mut self, other: Self) {
-        // Replace packages completely (higher priority wins)
+    // Adds packages/env vars from other config only if they don't already exist (respects precedence)
+    pub(crate) fn add_if_not_exists(&mut self, other: Self) {
+        // Only add packages that don't already exist (higher priority configs win)
         for (name, package) in other.packages {
-            self.packages.insert(name, package);
+            if !self.packages.contains_key(&name) {
+                self.packages.insert(name, package);
+            }
         }
 
-        // Merge groups (avoid duplicates)
+        // Add groups (avoid duplicates)
         for group in other.groups {
             if !self.groups.contains(&group) {
                 self.groups.push(group);
             }
         }
 
-        // Replace global env vars (higher priority wins)
-        self.env_vars.extend(other.env_vars);
+        // Only add env vars that don't already exist (higher priority configs win)
+        for (key, value) in other.env_vars {
+            if !self.env_vars.contains_key(&key) {
+                self.env_vars.insert(key, value);
+            }
+        }
     }
 }

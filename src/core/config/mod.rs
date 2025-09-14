@@ -6,7 +6,7 @@ pub mod validator;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Package {
-    pub config: Option<String>,
+    pub config: Vec<String>,
     pub service: Option<String>,
     pub env_vars: HashMap<String, String>,
 }
@@ -38,6 +38,7 @@ mod tests {
 
         let config = Config::parse(content).unwrap();
         assert!(config.packages.contains_key("test"));
+        assert_eq!(config.packages["test"].config, vec!["test -> ~/.config/test"]);
     }
 
     #[test]
@@ -59,6 +60,7 @@ mod tests {
 
         let package = &config.packages["test-service"];
         assert_eq!(package.service.as_ref().unwrap(), "test-service");
+        assert!(package.config.is_empty());
     }
 
     #[test]
@@ -68,6 +70,7 @@ mod tests {
 
         let package = &config.packages["test-env"];
         assert_eq!(package.env_vars.get("TEST_VAR").unwrap(), "test_value");
+        assert!(package.config.is_empty());
     }
 
     #[test]
@@ -112,8 +115,8 @@ vi
 
         // Check config directive
         assert_eq!(
-            config.packages["fish"].config.as_ref().unwrap(),
-            "fish -> ~/.config/fish"
+            config.packages["fish"].config,
+            vec!["fish -> ~/.config/fish"]
         );
 
         // Check global env
@@ -143,19 +146,9 @@ package2"#;
         assert!(config.packages.contains_key("package1"));
         assert!(config.packages.contains_key("package2"));
         assert_eq!(
-            config.packages["test"].config.as_ref().unwrap(),
-            "test -> ~/.config/test"
+            config.packages["test"].config,
+            vec!["test -> ~/.config/test"]
         );
-    }
-
-    #[test]
-    fn test_parse_empty_config() {
-        let content = "";
-        let config = Config::parse(content).unwrap();
-
-        assert!(config.packages.is_empty());
-        assert!(config.groups.is_empty());
-        assert!(config.env_vars.is_empty());
     }
 
     #[test]
@@ -164,15 +157,16 @@ package2"#;
         // Should not panic, just ignore unknown directives
         let config = Config::parse(content).unwrap();
         assert!(config.packages.contains_key("test"));
+        assert!(config.packages["test"].config.is_empty());
     }
 
     #[test]
-    fn test_merge_with_precedence() {
+    fn test_add_if_not_exists() {
         let mut config1 = Config::new();
         config1.packages.insert(
             "test".to_string(),
             Package {
-                config: Some("config1".to_string()),
+                config: vec!["config1".to_string()],
                 service: None,
                 env_vars: std::collections::HashMap::new(),
             },
@@ -182,17 +176,17 @@ package2"#;
         config2.packages.insert(
             "test".to_string(),
             Package {
-                config: Some("config2".to_string()),
+                config: vec!["config2".to_string()],
                 service: Some("service2".to_string()),
                 env_vars: std::collections::HashMap::new(),
             },
         );
 
-        config1.merge_with_precedence(config2);
+        config1.add_if_not_exists(config2);
 
         let package = &config1.packages["test"];
-        assert_eq!(package.config.as_ref().unwrap(), "config2"); // Higher priority wins
-        assert_eq!(package.service.as_ref().unwrap(), "service2"); // Added from higher priority
+        assert_eq!(package.config, vec!["config1"]); // config1 exists, so config2 is ignored
+        assert_eq!(package.service, None); // config2's service is ignored since package already exists
     }
 
     #[test]
@@ -203,7 +197,7 @@ package2"#;
         config.packages.insert(
             "installed-package".to_string(),
             Package {
-                config: None,
+                config: Vec::new(),
                 service: None,
                 env_vars: std::collections::HashMap::new(),
             },
@@ -212,7 +206,7 @@ package2"#;
         config.packages.insert(
             "uninstalled-package".to_string(),
             Package {
-                config: None,
+                config: Vec::new(),
                 service: None,
                 env_vars: std::collections::HashMap::new(),
             },
@@ -236,7 +230,7 @@ package2"#;
 
         assert!(config.packages.contains_key("test-package"));
         let package = &config.packages["test-package"];
-        assert_eq!(package.config.as_ref().unwrap(), "test -> ~/.config/test");
+        assert_eq!(package.config, vec!["test -> ~/.config/test"]);
     }
 
     #[test]
@@ -277,8 +271,8 @@ vi
 
         // Check config directive
         assert_eq!(
-            config.packages["fish"].config.as_ref().unwrap(),
-            "fish -> ~/.config/fish"
+            config.packages["fish"].config,
+            vec!["fish -> ~/.config/fish"]
         );
 
         // Check global env
@@ -286,5 +280,26 @@ vi
 
         // Check group
         assert!(config.groups.contains(&"core".to_string()));
+    }
+
+    #[test]
+    fn test_parse_multiple_configs() {
+        let content = "@package test\n:config one -> ~/.config/one\n:config two -> ~/.config/two";
+        let config = Config::parse(content).unwrap();
+
+        assert!(config.packages.contains_key("test"));
+        assert_eq!(
+            config.packages["test"].config,
+            vec!["one -> ~/.config/one", "two -> ~/.config/two"]
+        );
+    }
+
+    #[test]
+    fn test_parse_cfg_alias() {
+        let content = "@package test\n:cfg test -> ~/.config/test";
+        let config = Config::parse(content).unwrap();
+
+        assert!(config.packages.contains_key("test"));
+        assert_eq!(config.packages["test"].config, vec!["test -> ~/.config/test"]);
     }
 }

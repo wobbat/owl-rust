@@ -163,7 +163,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
 pub fn get_dotfile_mappings(config: &crate::core::config::Config) -> Vec<DotfileMapping> {
     let mut mappings = Vec::new();
     for (_name, pkg) in &config.packages {
-        if let Some(ref cfg) = pkg.config {
+        for cfg in &pkg.config {
             // formats: "a -> b" or "b" (same source name)
             if let Some((source, dest)) = cfg.split_once(" -> ") {
                 mappings.push(DotfileMapping {
