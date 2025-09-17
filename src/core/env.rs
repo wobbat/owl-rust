@@ -26,17 +26,17 @@ pub fn collect_all_env_vars(config: &crate::core::config::Config) -> Vec<(String
         vars.insert(k.clone(), v.clone());
     }
     // Package-level, override globals
-    for (_name, pkg) in &config.packages {
+    for pkg in config.packages.values() {
         for (k, v) in &pkg.env_vars {
             vars.insert(k.clone(), v.clone());
         }
     }
-    let mut v: Vec<(String, String)> = vars.into_iter().collect();
-    v.sort_by(|a, b| a.0.cmp(&b.0));
-    v
+    let mut sorted_environment_vars: Vec<(String, String)> = vars.into_iter().collect();
+    sorted_environment_vars.sort_by(|a, b| a.0.cmp(&b.0));
+    sorted_environment_vars
 }
 
-pub fn handle_environment_combined(
+pub fn apply_environment_variables(
     config: &crate::core::config::Config,
     dry_run: bool,
 ) -> Result<(), String> {

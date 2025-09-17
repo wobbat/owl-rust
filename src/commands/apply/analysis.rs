@@ -37,19 +37,16 @@ pub type Analysis = (
 
 pub fn analyze_system() -> Result<Analysis, String> {
     use std::thread;
-    use std::time::Instant;
-
-    let start_time = Instant::now();
 
     // Run independent, potentially slow operations in parallel
     // 1) Count upgradable packages
-    let count_handle = thread::spawn(|| crate::core::package::get_package_count());
+    let count_handle = thread::spawn(crate::core::package::get_package_count);
     // 2) Load config files
     let config_handle = thread::spawn(|| {
         crate::core::config::Config::load_all_relevant_config_files().map_err(|e| e.to_string())
     });
     // 3) Load package state from disk
-    let state_handle = thread::spawn(|| crate::core::state::PackageState::load());
+    let state_handle = thread::spawn(crate::core::state::PackageState::load);
     // 4) Prewarm installed package cache to avoid repeated -Q calls later
     let installed_warm_handle = thread::spawn(|| {
         let _ = crate::core::package::get_installed_packages();
@@ -75,9 +72,6 @@ pub fn analyze_system() -> Result<Analysis, String> {
     // Ensure installed cache warm-up finished (best-effort)
     let _ = installed_warm_handle.join();
 
-    println!("Analysis phase loading completed in {:.2}ms", start_time.elapsed().as_millis());
-    let seeding_start = Instant::now();
-
     // Seed managed state with currently installed packages that are present in config.
     // This ensures future removals are detected only for packages user explicitly managed via config.
     if seed_managed_with_desired_installed(&config, &mut state)? {
@@ -90,22 +84,15 @@ pub fn analyze_system() -> Result<Analysis, String> {
         }
     }
 
-    println!("Seeding completed in {:.2}ms", seeding_start.elapsed().as_millis());
-    let planning_start = Instant::now();
-
     // Plan package actions (installs and removals)
     let actions = crate::core::package::plan_package_actions(&config, &state)
         .map_err(|e| format!("Failed to plan package actions: {}", e))?;
-
-    println!("Planning completed in {:.2}ms", planning_start.elapsed().as_millis());
 
     // Calculate dynamic values (these are fast)
     let dotfile_count = count_dotfile_packages(&config);
     let env_var_count = count_environment_variables(&config);
     let service_count = crate::core::services::get_configured_services(&config).len();
     let config_package_count = config.packages.len();
-
-    println!("Total analysis time: {:.2}ms", start_time.elapsed().as_millis());
 
     Ok((
         package_count,

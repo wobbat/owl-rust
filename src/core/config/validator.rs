@@ -57,19 +57,16 @@ pub fn run_full_configcheck() -> Result<(), String> {
         groups_path.display(),
         groups_path.exists()
     );
-    if groups_path.exists() {
-        if let Ok(entries) = std::fs::read_dir(&groups_path) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    println!(
-                        "  Group file: {} (exists: {})",
-                        entry.path().display(),
-                        entry.path().exists()
-                    );
-                }
+    if groups_path.exists()
+        && let Ok(entries) = std::fs::read_dir(&groups_path) {
+            for entry in entries.flatten() {
+                println!(
+                    "  Group file: {} (exists: {})",
+                    entry.path().display(),
+                    entry.path().exists()
+                );
             }
         }
-    }
 
     match Config::load_all_relevant_config_files() {
         Ok(config) => {

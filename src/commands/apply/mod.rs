@@ -18,7 +18,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
 
     // Perform analysis with spinner
     let analysis_result = crate::internal::util::run_with_spinner(
-        || analysis::analyze_system(),
+        analysis::analyze_system,
         "Analyzing system configuration",
     );
 
@@ -28,7 +28,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         mut state,
         actions,
         dotfile_count,
-        env_var_count,
+        _env_var_count,
         service_count,
         config_package_count,
     ) = match analysis_result {
@@ -70,14 +70,14 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     packages::handle_removals(&to_remove, dry_run, &mut state);
 
     // Handle all package operations (install + update) in one combined phase
-    packages::run_combined_package_operations(
-        &to_install,
-        package_count,
-        had_uninstalled,
-        dotfile_count,
-        env_var_count,
+    let package_params = packages::PackageOperationParams {
         dry_run,
         non_interactive,
+        had_uninstalled,
+    };
+    packages::install_and_update_packages(
+        &to_install,
+        &package_params,
         &config,
     );
 

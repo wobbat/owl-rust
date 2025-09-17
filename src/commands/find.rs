@@ -223,8 +223,8 @@ fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) 
                 }
             }
             // Check for packages in sections
-            else if directive == "@packages" || directive == "@pkgs" {
-                if trimmed == *value && is_in_packages_section(content, line_num) {
+            else if (directive == "@packages" || directive == "@pkgs")
+                && trimmed == *value && is_in_packages_section(content, line_num) {
                     locations.push(Location {
                         file_path: file_path.to_string(),
                         line_number: line_num + 1,
@@ -232,7 +232,6 @@ fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) 
                         context: LocationContext::PackagesSection,
                     });
                 }
-            }
         }
     }
 
@@ -275,27 +274,11 @@ fn get_all_config_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 
     // Scan hosts directory
     let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
-    if let Ok(entries) = std::fs::read_dir(&hosts_dir) {
-        for entry in entries.flatten() {
-            if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::internal::constants::OWL_EXT) {
-                    files.push(path.to_string());
-                }
-            }
-        }
-    }
+    crate::internal::files::scan_directory_for_owl_files(&hosts_dir, &mut files);
 
     // Scan groups directory
     let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
-    if let Ok(entries) = std::fs::read_dir(&groups_dir) {
-        for entry in entries.flatten() {
-            if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::internal::constants::OWL_EXT) {
-                    files.push(path.to_string());
-                }
-            }
-        }
-    }
+    crate::internal::files::scan_directory_for_owl_files(&groups_dir, &mut files);
 
     Ok(files)
 }
@@ -309,7 +292,7 @@ fn display_locations(locations: &[Location]) {
     // Group by file
     let mut file_groups: std::collections::HashMap<String, Vec<&Location>> = std::collections::HashMap::new();
     for location in locations {
-        file_groups.entry(location.file_path.clone()).or_insert_with(Vec::new).push(location);
+        file_groups.entry(location.file_path.clone()).or_default().push(location);
     }
 
     println!(

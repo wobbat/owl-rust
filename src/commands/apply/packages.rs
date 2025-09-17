@@ -1,5 +1,13 @@
 use crate::core::pm::PackageManager;
 
+/// Parameters for package operations
+#[derive(Debug)]
+pub struct PackageOperationParams {
+    pub dry_run: bool,
+    pub non_interactive: bool,
+    pub had_uninstalled: bool,
+}
+
 pub fn handle_removals(
     to_remove: &[String],
     dry_run: bool,
@@ -56,34 +64,23 @@ pub fn handle_removals(
     }
 }
 
-/// Combined package operations: install uninstalled packages and update all packages
-pub fn run_combined_package_operations(
+/// Install missing packages and update all packages
+pub fn install_and_update_packages(
     to_install: &[String],
-    _package_count: usize,
-    had_uninstalled: bool,
-    _dotfile_count: usize,
-    _env_var_count: usize,
-    dry_run: bool,
-    non_interactive: bool,
+    params: &PackageOperationParams,
     config: &crate::core::config::Config,
 ) {
     // First, handle uninstalled packages
     let (repo_to_install, aur_to_install) = categorize_install_sets(to_install);
 
     // Get AUR packages that need updates
-    let aur_to_update = compute_aur_updates(dry_run);
-
-    // Combine all AUR operations for confirmation
-    let mut all_aur_packages = aur_to_install.clone();
-    all_aur_packages.extend(aur_to_update.clone());
-    all_aur_packages.sort();
-    all_aur_packages.dedup();
+    let aur_to_update = compute_aur_updates(params.dry_run);
 
     // Install repo packages first (no confirmation needed)
-    install_repo_packages(&repo_to_install, dry_run);
+    install_repo_packages(&repo_to_install, params.dry_run);
 
-    // Handle all AUR packages together
-    if !all_aur_packages.is_empty() {
+    // Handle all AUR packages together if there are any
+    if !aur_to_install.is_empty() || !aur_to_update.is_empty() {
         // Show detailed breakdown of what will happen
         if !aur_to_install.is_empty() {
             println!(
@@ -101,27 +98,26 @@ pub fn run_combined_package_operations(
         }
 
         handle_aur_operations(
-            &all_aur_packages,
             &aur_to_install,
             &aur_to_update,
-            dry_run,
-            non_interactive,
+            params.dry_run,
+            params.non_interactive,
         );
     }
 
     // Add blank line if we installed packages before this
-    if had_uninstalled {
+    if params.had_uninstalled {
         println!();
     }
 
     // Update repo packages
-    update_repo_packages(dry_run);
+    update_repo_packages(params.dry_run);
 
     // Apply dotfile synchronization
-    super::dotfiles::apply_dotfiles_with_config(config, dry_run);
+    super::dotfiles::apply_dotfiles_with_config(config, params.dry_run);
 
     // Handle system section (services + environment)
-    super::system::handle_system_section_with_config(config, dry_run);
+    super::system::handle_system_section_with_config(config, params.dry_run);
 }
 
 pub fn categorize_install_sets(to_install: &[String]) -> (Vec<String>, Vec<String>) {
@@ -171,23 +167,27 @@ pub fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
             crate::internal::color::blue("info:"),
             repo_to_install.join(", ")
         );
-    } else {
-        if let Err(e) = crate::core::pm::ParuPacman::new().install_repo(repo_to_install) {
-            eprintln!("{}", crate::internal::color::red(&e));
-        }
+    } else if let Err(e) = crate::core::pm::ParuPacman::new().install_repo(repo_to_install) {
+        eprintln!("{}", crate::internal::color::red(&e));
     }
 }
 
 pub fn handle_aur_operations(
-    all_aur_packages: &[String],
     aur_to_install: &[String],
     aur_to_update: &[String],
     dry_run: bool,
     non_interactive: bool,
 ) {
+    // Create combined list only when needed for confirmation/display
+    let all_aur_packages: Vec<String> = aur_to_install
+        .iter()
+        .chain(aur_to_update.iter())
+        .cloned()
+        .collect();
+
     if dry_run
         || non_interactive
-        || crate::cli::ui::confirm_aur_operation(all_aur_packages, "installing/updating")
+        || crate::cli::ui::confirm_aur_operation(&all_aur_packages, "installing/updating")
     {
         if dry_run {
             println!(
@@ -197,16 +197,14 @@ pub fn handle_aur_operations(
             );
             return;
         }
-        if !aur_to_install.is_empty() {
-            if let Err(e) = crate::core::pm::ParuPacman::new().install_aur(aur_to_install) {
+        if !aur_to_install.is_empty()
+            && let Err(e) = crate::core::pm::ParuPacman::new().install_aur(aur_to_install) {
                 eprintln!("{}", crate::internal::color::red(&e));
             }
-        }
-        if !aur_to_update.is_empty() {
-            if let Err(e) = crate::core::pm::ParuPacman::new().update_aur(aur_to_update) {
+        if !aur_to_update.is_empty()
+            && let Err(e) = crate::core::pm::ParuPacman::new().update_aur(aur_to_update) {
                 eprintln!("{}", crate::internal::color::red(&e));
             }
-        }
     } else {
         println!(
             "  {}",

@@ -135,7 +135,7 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
 /// Get configured services from config
 pub fn get_configured_services(config: &crate::core::config::Config) -> Vec<String> {
     let mut services = Vec::new();
-    for (_name, pkg) in &config.packages {
+    for pkg in config.packages.values() {
         if let Some(ref svc) = pkg.service {
             services.push(svc.clone());
         }

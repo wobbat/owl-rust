@@ -38,13 +38,12 @@ pub fn handle_clean_all() -> Result<(), String> {
         color::yellow(&config_files.len().to_string())
     );
 
-    let mut cleaned_count = 0;
     let mut failed_count = 0;
 
     for filename in config_files {
         match handle_clean(&filename) {
             Ok(()) => {
-                cleaned_count += 1;
+                // File cleaned successfully
             }
             Err(e) => {
                 failed_count += 1;
@@ -82,27 +81,11 @@ fn get_all_config_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 
     // Scan hosts directory
     let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
-    if let Ok(entries) = std::fs::read_dir(&hosts_dir) {
-        for entry in entries.flatten() {
-            if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::internal::constants::OWL_EXT) {
-                    files.push(path.to_string());
-                }
-            }
-        }
-    }
+    crate::internal::files::scan_directory_for_owl_files(&hosts_dir, &mut files);
 
     // Scan groups directory
     let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
-    if let Ok(entries) = std::fs::read_dir(&groups_dir) {
-        for entry in entries.flatten() {
-            if let Some(path) = entry.path().to_str() {
-                if path.ends_with(crate::internal::constants::OWL_EXT) {
-                    files.push(path.to_string());
-                }
-            }
-        }
-    }
+    crate::internal::files::scan_directory_for_owl_files(&groups_dir, &mut files);
 
     Ok(files)
 }

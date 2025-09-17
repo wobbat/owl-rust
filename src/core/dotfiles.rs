@@ -42,11 +42,10 @@ fn expand_tilde(path: &str) -> String {
         if let Ok(home) = std::env::var("HOME") {
             return format!("{}/{}", home, rest);
         }
-    } else if path == "~" {
-        if let Ok(home) = std::env::var("HOME") {
+    } else if path == "~"
+        && let Ok(home) = std::env::var("HOME") {
             return home;
         }
-    }
     path.to_string()
 }
 
@@ -162,7 +161,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
 /// Build dotfile mappings from config
 pub fn get_dotfile_mappings(config: &crate::core::config::Config) -> Vec<DotfileMapping> {
     let mut mappings = Vec::new();
-    for (_name, pkg) in &config.packages {
+    for pkg in config.packages.values() {
         for cfg in &pkg.config {
             // formats: "a -> b" or "b" (same source name)
             if let Some((source, dest)) = cfg.split_once(" -> ") {
@@ -223,14 +222,12 @@ pub fn apply_dotfiles(
             } else {
                 DotfileStatus::Update
             }
+        } else if !dst.exists() {
+            DotfileStatus::Create
+        } else if sha256_file(&src)? == sha256_file(&dst)? {
+            DotfileStatus::UpToDate
         } else {
-            if !dst.exists() {
-                DotfileStatus::Create
-            } else if sha256_file(&src)? == sha256_file(&dst)? {
-                DotfileStatus::UpToDate
-            } else {
-                DotfileStatus::Update
-            }
+            DotfileStatus::Update
         };
 
         if !dry_run {

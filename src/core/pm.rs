@@ -86,14 +86,13 @@ impl PackageManager for ParuPacman {
         let mut repo_names = HashSet::new();
         
         for line in stdout.lines() {
-            if let Some(rest) = line.strip_prefix("Name") {
-                if let Some(idx) = rest.find(':') {
+            if let Some(rest) = line.strip_prefix("Name")
+                && let Some(idx) = rest.find(':') {
                     let value = rest[idx + 1..].trim();
                     if !value.is_empty() {
                         repo_names.insert(value.to_string());
                     }
                 }
-            }
         }
         Ok(repo_names)
     }
@@ -427,8 +426,8 @@ fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
                 results.push(result);
             }
             current_result = Some(parse_header_line(trimmed_line)?);
-        } else if original_line.starts_with("    ") {
-            if let Some(ref mut result) = current_result {
+        } else if original_line.starts_with("    ")
+            && let Some(ref mut result) = current_result {
                 let desc_part = trimmed_line;
                 if result.description.is_empty() {
                     result.description = desc_part.to_string();
@@ -437,7 +436,6 @@ fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
                     result.description.push_str(desc_part);
                 }
             }
-        }
     }
     if let Some(result) = current_result {
         results.push(result);

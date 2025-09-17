@@ -3,8 +3,8 @@ pub fn handle_system_section_with_config(config: &crate::core::config::Config, d
     // no-op placeholder kept for potential future use
 
     // Check if we have services or environment variables
-    let services = crate::core::services::get_configured_services(&config);
-    let env_var_count = super::analysis::count_environment_variables(&config);
+    let services = crate::core::services::get_configured_services(config);
+    let env_var_count = super::analysis::count_environment_variables(config);
 
     if services.is_empty() && env_var_count == 0 {
         return;
@@ -88,7 +88,7 @@ pub fn handle_system_section_with_config(config: &crate::core::config::Config, d
 
     // Handle environment variables
     if env_var_count > 0 {
-        match crate::core::env::handle_environment_combined(&config, dry_run) {
+        match crate::core::env::apply_environment_variables(config, dry_run) {
             Ok(()) => {}
             Err(e) => {
                 eprintln!(

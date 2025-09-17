@@ -57,27 +57,27 @@ pub fn parse_command(filtered_args: &[String]) -> Result<Command, crate::error::
         return Ok(Command::Apply);
     }
 
-    let cmd_str = &filtered_args[0];
-    let cmd_args = &filtered_args[1..];
+    let command_name = &filtered_args[0];
+    let command_arguments = &filtered_args[1..];
 
     // Handle aliases by mapping to their canonical commands
-    let (canonical_cmd, mapped_args) = resolve_command_alias(cmd_str, cmd_args);
+    let (canonical_cmd, mapped_args) = resolve_command_alias(command_name, command_arguments);
 
-    parse_canonical_command(canonical_cmd, &mapped_args, cmd_str)
+    parse_canonical_command(canonical_cmd, &mapped_args, command_name)
 }
 
 /// Resolve command aliases to their canonical form
-fn resolve_command_alias<'a>(cmd_str: &'a str, cmd_args: &[String]) -> (&'a str, Vec<String>) {
-    match cmd_str {
+fn resolve_command_alias<'a>(command_name: &'a str, command_arguments: &[String]) -> (&'a str, Vec<String>) {
+    match command_name {
         constants::CMD_DE => (
             constants::CMD_EDIT,
-            vec![constants::EDIT_TYPE_DOTS.to_string(), cmd_args.join(" ")],
+            vec![constants::EDIT_TYPE_DOTS.to_string(), command_arguments.join(" ")],
         ),
         constants::CMD_CE => (
             constants::CMD_EDIT,
-            vec![constants::EDIT_TYPE_CONFIG.to_string(), cmd_args.join(" ")],
+            vec![constants::EDIT_TYPE_CONFIG.to_string(), command_arguments.join(" ")],
         ),
-        _ => (cmd_str, cmd_args.to_vec()),
+        _ => (command_name, command_arguments.to_vec()),
     }
 }
 
@@ -119,9 +119,9 @@ fn parse_dots_command(args: &[String]) -> Result<Command, crate::error::OwlError
 /// Parse edit command
 fn parse_edit_command(args: &[String]) -> Result<Command, crate::error::OwlError> {
     if args.len() >= 2 {
-        let typ = args[0].clone();
+        let edit_type = args[0].clone();
         let arg = args[1..].join(" ");
-        Ok(Command::Edit { typ, arg })
+        Ok(Command::Edit { typ: edit_type, arg })
     } else {
         Err(crate::error::OwlError::InvalidArguments(
             "edit command requires type and argument".to_string(),
@@ -271,11 +271,9 @@ pub fn execute_command(opts: &CliOptions) {
                     eprintln!("{}", colo::red(&err.to_string()));
                     std::process::exit(1);
                 }
-            } else {
-                if let Err(err) = crate::core::config::validator::run_full_configcheck() {
-                    eprintln!("{}", colo::red(&err.to_string()));
-                    std::process::exit(1);
-                }
+            } else if let Err(err) = crate::core::config::validator::run_full_configcheck() {
+                eprintln!("{}", colo::red(&err.to_string()));
+                std::process::exit(1);
             }
         }
         Command::ConfigHost => {
@@ -287,10 +285,10 @@ pub fn execute_command(opts: &CliOptions) {
         Command::Clean { filename } => {
             let result = match filename {
                 Some(fname) => {
-                    let result = crate::commands::clean::handle_clean(&fname);
+                    let result = crate::commands::clean::handle_clean(fname);
                     if result.is_ok() {
                         println!("[{}]", colo::blue("clean"));
-                        println!("  {} {}", colo::green("✓"), colo::dim(&fname));
+                        println!("  {} {}", colo::green("✓"), colo::dim(fname));
                     }
                     result
                 },

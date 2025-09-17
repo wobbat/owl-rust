@@ -93,9 +93,7 @@ impl Config {
     pub(crate) fn add_if_not_exists(&mut self, other: Self) {
         // Only add packages that don't already exist (higher priority configs win)
         for (name, package) in other.packages {
-            if !self.packages.contains_key(&name) {
-                self.packages.insert(name, package);
-            }
+            self.packages.entry(name).or_insert(package);
         }
 
         // Add groups (avoid duplicates)
@@ -107,9 +105,7 @@ impl Config {
 
         // Only add env vars that don't already exist (higher priority configs win)
         for (key, value) in other.env_vars {
-            if !self.env_vars.contains_key(&key) {
-                self.env_vars.insert(key, value);
-            }
+            self.env_vars.entry(key).or_insert(value);
         }
     }
 }

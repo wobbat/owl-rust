@@ -4,6 +4,18 @@ use std::env;
 use std::path::Path;
 use std::process::Command;
 
+/// Scan a directory for .owl files and add them to the files vector
+pub fn scan_directory_for_owl_files(directory_path: &str, files: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(directory_path) {
+        for entry in entries.flatten() {
+            if let Some(path) = entry.path().to_str()
+                && path.ends_with(crate::internal::constants::OWL_EXT) {
+                    files.push(path.to_string());
+                }
+        }
+    }
+}
+
 /// Open a file in the user's preferred editor
 pub fn open_editor(path: &str) -> Result<(), String> {
     let editor = env::var("EDITOR")
