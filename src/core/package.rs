@@ -101,12 +101,12 @@ pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
 /// For regular packages, checks if the package is installed
 /// For groups, checks if all packages in the group are installed
 pub fn is_package_or_group_installed(package_name: &str) -> Result<bool, String> {
-    // First check if it's a regular package
+    // First check if it's a regular package (fastest check)
     if is_package_installed(package_name)? {
         return Ok(true);
     }
 
-    // Check if it's a group
+    // Check if it's a group (cached to avoid repeated calls)
     let pm = ParuPacman::new();
     if pm.is_package_group(package_name)? {
         // It's a group, check if all packages in the group are installed
@@ -115,8 +115,10 @@ pub fn is_package_or_group_installed(package_name: &str) -> Result<bool, String>
             return Ok(false);
         }
 
+        // Use the cached installed packages list for faster lookups
+        let installed = get_installed_packages()?;
         for pkg in group_packages {
-            if !is_package_installed(&pkg)? {
+            if !installed.contains(&pkg) {
                 return Ok(false);
             }
         }

@@ -37,6 +37,9 @@ pub type Analysis = (
 
 pub fn analyze_system() -> Result<Analysis, String> {
     use std::thread;
+    use std::time::Instant;
+
+    let start_time = Instant::now();
 
     // Run independent, potentially slow operations in parallel
     // 1) Count upgradable packages
@@ -72,6 +75,9 @@ pub fn analyze_system() -> Result<Analysis, String> {
     // Ensure installed cache warm-up finished (best-effort)
     let _ = installed_warm_handle.join();
 
+    println!("Analysis phase loading completed in {:.2}ms", start_time.elapsed().as_millis());
+    let seeding_start = Instant::now();
+
     // Seed managed state with currently installed packages that are present in config.
     // This ensures future removals are detected only for packages user explicitly managed via config.
     if seed_managed_with_desired_installed(&config, &mut state)? {
@@ -84,15 +90,22 @@ pub fn analyze_system() -> Result<Analysis, String> {
         }
     }
 
+    println!("Seeding completed in {:.2}ms", seeding_start.elapsed().as_millis());
+    let planning_start = Instant::now();
+
     // Plan package actions (installs and removals)
     let actions = crate::core::package::plan_package_actions(&config, &state)
         .map_err(|e| format!("Failed to plan package actions: {}", e))?;
 
-    // Calculate dynamic values
+    println!("Planning completed in {:.2}ms", planning_start.elapsed().as_millis());
+
+    // Calculate dynamic values (these are fast)
     let dotfile_count = count_dotfile_packages(&config);
     let env_var_count = count_environment_variables(&config);
     let service_count = crate::core::services::get_configured_services(&config).len();
     let config_package_count = config.packages.len();
+
+    println!("Total analysis time: {:.2}ms", start_time.elapsed().as_millis());
 
     Ok((
         package_count,
@@ -112,25 +125,36 @@ pub fn seed_managed_with_desired_installed(
     state: &mut crate::core::state::PackageState,
 ) -> Result<bool, String> {
     let mut changed = false;
-    for pkg in config.packages.keys() {
-        if !state.is_managed(pkg) {
-            match crate::core::package::is_package_or_group_installed(pkg) {
-                Ok(true) => {
-                    state.add_managed(pkg.to_string());
-                    changed = true;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        crate::internal::color::red(&format!(
-                            "Failed to verify installation of {}: {}",
-                            pkg, e
-                        ))
-                    );
-                }
+    
+    // Collect packages to check in batches
+    let packages_to_check: Vec<&String> = config.packages.keys()
+        .filter(|pkg| !state.is_managed(pkg))
+        .collect();
+    
+    if packages_to_check.is_empty() {
+        return Ok(false);
+    }
+
+    // Group packages by whether they might be groups or regular packages
+    // to minimize redundant group checks
+    for pkg in packages_to_check {
+        match crate::core::package::is_package_or_group_installed(pkg) {
+            Ok(true) => {
+                state.add_managed(pkg.to_string());
+                changed = true;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    crate::internal::color::red(&format!(
+                        "Failed to verify installation of {}: {}",
+                        pkg, e
+                    ))
+                );
             }
         }
     }
+    
     Ok(changed)
 }

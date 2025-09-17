@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageSource {
@@ -39,6 +41,10 @@ impl ParuPacman {
     }
 }
 
+// Cache for package groups to avoid repeated pacman -Sg calls
+static GROUP_CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+static GROUP_PACKAGES_CACHE: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
+
 impl PackageManager for ParuPacman {
     fn list_installed(&self) -> Result<HashSet<String>, String> {
         let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
@@ -66,14 +72,19 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() {
             return Ok(HashSet::new());
         }
+        
+        // Use a single pacman call for all packages to improve performance
         let mut cmd = Command::new("pacman");
         cmd.arg("-Si");
         cmd.args(packages);
+        
         let output = cmd
             .output()
             .map_err(|e| format!("Failed to check package info: {}", e))?;
+        
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut repo_names = HashSet::new();
+        
         for line in stdout.lines() {
             if let Some(rest) = line.strip_prefix("Name") {
                 if let Some(idx) = rest.find(':') {
@@ -287,16 +298,44 @@ impl PackageManager for ParuPacman {
     }
 
     fn is_package_group(&self, package_name: &str) -> Result<bool, String> {
+        // Check cache first
+        let cache = GROUP_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        
+        {
+            let cache_guard = cache.lock().unwrap();
+            if let Some(&is_group) = cache_guard.get(package_name) {
+                return Ok(is_group);
+            }
+        }
+
         let output = Command::new("pacman")
             .args(["-Sg", package_name])
             .output()
             .map_err(|e| format!("Failed to check if {} is a group: {}", package_name, e))?;
 
         // If pacman -Sg succeeds and returns output, it's a group
-        Ok(output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+        let is_group = output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty();
+        
+        // Cache the result
+        {
+            let mut cache_guard = cache.lock().unwrap();
+            cache_guard.insert(package_name.to_string(), is_group);
+        }
+        
+        Ok(is_group)
     }
 
     fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>, String> {
+        // Check cache first
+        let cache = GROUP_PACKAGES_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        
+        {
+            let cache_guard = cache.lock().unwrap();
+            if let Some(packages) = cache_guard.get(group_name) {
+                return Ok(packages.clone());
+            }
+        }
+
         let output = Command::new("pacman")
             .args(["-Sg", group_name])
             .output()
@@ -321,6 +360,12 @@ impl PackageManager for ParuPacman {
                     }
                 }
             }
+        }
+
+        // Cache the result
+        {
+            let mut cache_guard = cache.lock().unwrap();
+            cache_guard.insert(group_name.to_string(), packages.clone());
         }
 
         Ok(packages)
