@@ -1,7 +1,57 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::Write;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
+use std::thread;
+use std::time::Duration;
+use anyhow::{anyhow, Result};
+
+/// Retry a command with exponential backoff for network-related failures
+fn retry_command<F, T>(mut operation: F, max_retries: usize) -> Result<T>
+where
+    F: FnMut() -> Result<T>,
+{
+    let mut last_error = None;
+
+    for attempt in 0..=max_retries {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                last_error = Some(err);
+
+                // Check if this is a network-related error that we should retry
+                let err_msg = last_error.as_ref().unwrap().to_string();
+                let should_retry = err_msg.contains("Connection reset by peer")
+                    || err_msg.contains("error sending request")
+                    || err_msg.contains("error trying to connect")
+                    || err_msg.contains("os error 104");
+
+                if !should_retry || attempt == max_retries {
+                    return Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")));
+                }
+
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                let delay = Duration::from_secs(1 << attempt);
+
+                // Clear the current line and show retry status
+                print!("\r\x1b[2K");
+                std::io::stdout().flush().ok();
+                print!("Retrying due to network errors... ({}/{})", attempt + 1, max_retries + 1);
+                std::io::stdout().flush().ok();
+                thread::sleep(delay);
+
+                // Clear the line for the next operation
+                print!("\r\x1b[2K");
+                std::io::stdout().flush().ok();
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| anyhow!("Unknown error")))
+}
+
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageSource {
@@ -20,18 +70,18 @@ pub struct SearchResult {
 }
 
 pub trait PackageManager {
-    fn list_installed(&self) -> Result<HashSet<String>, String>;
-    fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>, String>;
-    fn upgrade_count(&self) -> Result<usize, String>;
-    fn get_aur_updates(&self) -> Result<Vec<String>, String>;
-    fn install_repo(&self, packages: &[String]) -> Result<(), String>;
-    fn install_aur(&self, packages: &[String]) -> Result<(), String>;
-    fn update_repo(&self) -> Result<(), String>;
-    fn update_aur(&self, packages: &[String]) -> Result<(), String>;
-    fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<(), String>;
-    fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>, String>;
-    fn is_package_group(&self, package_name: &str) -> Result<bool, String>;
-    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>, String>;
+    fn list_installed(&self) -> Result<HashSet<String>>;
+    fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>>;
+    fn upgrade_count(&self) -> Result<usize>;
+    fn get_aur_updates(&self) -> Result<Vec<String>>;
+    fn install_repo(&self, packages: &[String]) -> Result<()>;
+    fn install_aur(&self, packages: &[String]) -> Result<()>;
+    fn update_repo(&self) -> Result<()>;
+    fn update_aur(&self, packages: &[String]) -> Result<()>;
+    fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<()>;
+    fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>>;
+    fn is_package_group(&self, package_name: &str) -> Result<bool>;
+    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>>;
 }
 
 pub struct ParuPacman;
@@ -46,29 +96,28 @@ static GROUP_CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 static GROUP_PACKAGES_CACHE: OnceLock<Mutex<HashMap<String, Vec<String>>>> = OnceLock::new();
 
 impl PackageManager for ParuPacman {
-    fn list_installed(&self) -> Result<HashSet<String>, String> {
+    fn list_installed(&self) -> Result<HashSet<String>> {
         let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
             .arg("-Qq")
             .output()
-            .map_err(|e| format!("Failed to get installed packages: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to get installed packages: {}", e))?;
         if !output.status.success() {
-            return Err(format!(
+            return Err(anyhow::anyhow!(
                 "Package manager failed: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut installed = HashSet::new();
-        for line in stdout.lines() {
-            let name = line.trim();
-            if !name.is_empty() {
-                installed.insert(name.to_string());
-            }
-        }
+        let installed = stdout
+            .lines()
+            .map(|line| line.trim())
+            .filter(|name| !name.is_empty())
+            .map(|name| name.to_string())
+            .collect::<HashSet<_>>();
         Ok(installed)
     }
 
-    fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>, String> {
+    fn batch_repo_available(&self, packages: &[String]) -> Result<HashSet<String>> {
         if packages.is_empty() {
             return Ok(HashSet::new());
         }
@@ -80,123 +129,137 @@ impl PackageManager for ParuPacman {
         
         let output = cmd
             .output()
-            .map_err(|e| format!("Failed to check package info: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to check package info: {}", e))?;
         
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut repo_names = HashSet::new();
-        
-        for line in stdout.lines() {
-            if let Some(rest) = line.strip_prefix("Name")
-                && let Some(idx) = rest.find(':') {
-                    let value = rest[idx + 1..].trim();
-                    if !value.is_empty() {
-                        repo_names.insert(value.to_string());
-                    }
-                }
-        }
+        let repo_names = stdout
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("Name").and_then(|rest| {
+                    rest.find(':').map(|idx| {
+                        let value = rest[idx + 1..].trim();
+                        if !value.is_empty() {
+                            Some(value.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .flatten()
+            })
+            .collect::<HashSet<_>>();
         Ok(repo_names)
     }
 
-    fn upgrade_count(&self) -> Result<usize, String> {
-        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
-            .args(["-Qu", "-q"])
-            .output()
-            .map_err(|e| {
-                format!(
-                    "Failed to run {} -Qu: {}",
-                    crate::internal::constants::PACKAGE_MANAGER,
-                    e
-                )
-            })?;
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.lines().count())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if output.status.code() == Some(1) && stderr.trim().is_empty() {
-                Ok(0)
-            } else {
-                Err(format!(
-                    "{} -Qu failed: {}",
-                    crate::internal::constants::PACKAGE_MANAGER,
-                    stderr
-                ))
-            }
-        }
-    }
-
-    fn get_aur_updates(&self) -> Result<Vec<String>, String> {
-        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
-            .args(["-Qua", "-q"])
-            .output()
-            .map_err(|e| format!("Failed to check AUR updates: {}", e))?;
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let packages: Vec<String> = stdout
-                .lines()
-                .filter_map(|line| {
-                    let l = line.trim();
-                    if l.is_empty() {
-                        return None;
+    fn upgrade_count(&self) -> Result<usize> {
+        retry_command(
+            || {
+                let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
+                    .args(["-Qu", "-q"])
+                    .output()
+                    .map_err(|e| anyhow::anyhow!(
+                        "Failed to run {} -Qu: {}",
+                        crate::internal::constants::PACKAGE_MANAGER,
+                        e
+                    ))?;
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Ok(stdout.lines().count())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.code() == Some(1) && stderr.trim().is_empty() {
+                        Ok(0)
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "{} -Qu failed: {}",
+                            crate::internal::constants::PACKAGE_MANAGER,
+                            stderr
+                        ))
                     }
-                    Some(l.split_whitespace().next().unwrap_or(l).to_string())
-                })
-                .collect();
-            Ok(packages)
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if output.status.code() == Some(1) && stderr.trim().is_empty() {
-                // Treat as no updates
-                Ok(Vec::new())
-            } else {
-                Err(format!("AUR update check failed: {}", stderr))
-            }
-        }
+                }
+            },
+            3, // Max 3 retries
+        )
     }
 
-    fn install_repo(&self, packages: &[String]) -> Result<(), String> {
+    fn get_aur_updates(&self) -> Result<Vec<String>> {
+        retry_command(
+            || {
+                let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
+                    .args(["-Qua", "-q"])
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("Failed to check AUR updates: {}", e))?;
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let packages: Vec<String> = stdout
+                        .lines()
+                        .filter_map(|line| {
+                            let l = line.trim();
+                            if l.is_empty() {
+                                return None;
+                            }
+                            Some(l.split_whitespace().next().unwrap_or(l).to_string())
+                        })
+                        .collect();
+                    Ok(packages)
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.code() == Some(1) && stderr.trim().is_empty() {
+                        // Treat as no updates
+                        Ok(Vec::new())
+                    } else {
+                        Err(anyhow::anyhow!("AUR update check failed: {}", stderr))
+                    }
+                }
+            },
+            3, // Max 3 retries
+        )
+    }
+
+    fn install_repo(&self, packages: &[String]) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
         }
         let mut args = vec!["--repo", "-S", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
-        let status = crate::internal::util::run_command_with_spinner(
+        let status = crate::internal::util::execute_command_with_spinner(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
             &format!("Installing {} repo packages", packages.len()),
         )?;
         if !status.success() {
-            return Err("Repository install failed".into());
+            return Err(anyhow::anyhow!("Repository install failed"));
         }
         Ok(())
     }
 
-    fn install_aur(&self, packages: &[String]) -> Result<(), String> {
+    fn install_aur(&self, packages: &[String]) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
         }
         let mut args = vec![
-            "--aur",
-            "-S",
-            "--noconfirm",
-            "--skipreview",
-            "--noprovides",
-            "--noupgrademenu",
+            "--aur".to_string(),
+            "-S".to_string(),
+            "--noconfirm".to_string(),
+            "--skipreview".to_string(),
+            "--noprovides".to_string(),
+            "--noupgrademenu".to_string(),
         ];
-        args.extend(packages.iter().map(|s| s.as_str()));
-        let status = crate::internal::util::run_command_with_spinner(
+        args.extend(packages.iter().cloned());
+        let status = crate::internal::util::execute_command_with_retry(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
             &format!("Installing {} AUR packages", packages.len()),
+            3, // Max 3 retries
         )?;
         if !status.success() {
-            return Err("AUR install failed".into());
+            return Err(anyhow::anyhow!("AUR install failed"));
         }
         Ok(())
     }
 
-    fn update_repo(&self) -> Result<(), String> {
-        let (status, _stderr_out) = crate::internal::util::run_command_with_spinner_capture(
+    fn update_repo(&self) -> Result<()> {
+        let (status, _stderr_out) = crate::internal::util::execute_command_with_stderr_capture(
             crate::internal::constants::PACKAGE_MANAGER,
             &["--repo", "-Syu", "--noconfirm"],
             "Updating official repository packages (syncing databases and upgrading packages)",
@@ -214,25 +277,25 @@ impl PackageManager for ParuPacman {
             );
             Ok(())
         } else {
-            Err(format!(
+            Err(anyhow::anyhow!(
                 "Repository update failed (exit code: {:?})",
                 status.code()
             ))
         }
     }
 
-    fn update_aur(&self, packages: &[String]) -> Result<(), String> {
+    fn update_aur(&self, packages: &[String]) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
         }
         let mut args = vec!["--aur", "-Syu", "--noconfirm"];
         args.extend(packages.iter().map(|s| s.as_str()));
-        let (status, stderr_out) = crate::internal::util::run_command_with_spinner_capture(
+        let (status, stderr_out) = crate::internal::util::execute_command_with_stderr_capture(
             crate::internal::constants::PACKAGE_MANAGER,
             &args,
             "Updating AUR packages",
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| anyhow::anyhow!(e))?;
         if status.success() {
             println!(
                 "\r\x1b[2K  {} AUR package updates completed",
@@ -242,18 +305,17 @@ impl PackageManager for ParuPacman {
         } else {
             let err = stderr_out.trim();
             if !err.is_empty() {
-                let lines: Vec<&str> = err.lines().collect();
                 let take = 30usize;
-                let start = lines.len().saturating_sub(take);
-                for line in &lines[start..] {
-                    eprintln!("  {}", line);
-                }
+                err.lines()
+                    .rev()
+                    .take(take)
+                    .for_each(|line| eprintln!("  {}", line));
             }
-            Err("AUR package update failed".to_string())
+            Err(anyhow::anyhow!("AUR package update failed"))
         }
     }
 
-    fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<(), String> {
+    fn remove_packages(&self, packages: &[String], quiet: bool) -> Result<()> {
         if packages.is_empty() {
             return Ok(());
         }
@@ -265,7 +327,7 @@ impl PackageManager for ParuPacman {
         cmd.args(packages);
         let status = cmd
             .status()
-            .map_err(|e| format!("Failed to remove packages: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to remove packages: {}", e))?;
         if status.success() {
             println!(
                 "  {} Removed {} package(s)",
@@ -274,29 +336,34 @@ impl PackageManager for ParuPacman {
             );
             Ok(())
         } else {
-            Err("Package removal failed".to_string())
+            Err(anyhow::anyhow!("Package removal failed"))
         }
     }
 
-    fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>, String> {
+    fn search_packages(&self, terms: &[String]) -> Result<Vec<SearchResult>> {
         if terms.is_empty() {
             return Ok(Vec::new());
         }
-        let mut cmd = Command::new("paru");
-        cmd.args(["-Ss", "--bottomup"]);
-        cmd.args(terms);
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed to run paru search: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Paru search failed: {}", stderr));
-        }
-        let text = String::from_utf8_lossy(&output.stdout);
-        parse_paru_search_output(&text)
+        retry_command(
+            || {
+                let mut cmd = Command::new("paru");
+                cmd.args(["-Ss", "--bottomup"]);
+                cmd.args(terms);
+                let output = cmd
+                    .output()
+                    .map_err(|e| anyhow::anyhow!("Failed to run paru search: {}", e))?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(anyhow::anyhow!("Paru search failed: {}", stderr));
+                }
+                let text = String::from_utf8_lossy(&output.stdout);
+                parse_paru_search_output(&text)
+            },
+            3, // Max 3 retries
+        )
     }
 
-    fn is_package_group(&self, package_name: &str) -> Result<bool, String> {
+    fn is_package_group(&self, package_name: &str) -> Result<bool> {
         // Check cache first
         let cache = GROUP_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         
@@ -310,7 +377,7 @@ impl PackageManager for ParuPacman {
         let output = Command::new("pacman")
             .args(["-Sg", package_name])
             .output()
-            .map_err(|e| format!("Failed to check if {} is a group: {}", package_name, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to check if {} is a group: {}", package_name, e))?;
 
         // If pacman -Sg succeeds and returns output, it's a group
         let is_group = output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty();
@@ -324,7 +391,7 @@ impl PackageManager for ParuPacman {
         Ok(is_group)
     }
 
-    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>, String> {
+    fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>> {
         // Check cache first
         let cache = GROUP_PACKAGES_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         
@@ -338,10 +405,10 @@ impl PackageManager for ParuPacman {
         let output = Command::new("pacman")
             .args(["-Sg", group_name])
             .output()
-            .map_err(|e| format!("Failed to get packages for group {}: {}", group_name, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to get packages for group {}: {}", group_name, e))?;
 
         if !output.status.success() {
-            return Err(format!("Failed to get packages for group {}", group_name));
+            return Err(anyhow::anyhow!("Failed to get packages for group {}", group_name));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -379,24 +446,24 @@ fn is_header_line(line: &str) -> bool {
         && line.split_whitespace().next().unwrap_or("").contains('/')
 }
 
-fn parse_repo_name(repo_name: &str) -> Result<(&str, &str), String> {
+fn parse_repo_name(repo_name: &str) -> Result<(&str, &str)> {
     if let Some(slash_pos) = repo_name.find('/') {
         let repo = &repo_name[..slash_pos];
         let name = &repo_name[slash_pos + 1..];
         Ok((repo, name))
     } else {
-        Err(format!("Invalid repo/name format: {}", repo_name))
+        Err(anyhow::anyhow!("Invalid repo/name format: {}", repo_name))
     }
 }
 
-fn parse_header_line(line: &str) -> Result<SearchResult, String> {
+fn parse_header_line(line: &str) -> Result<SearchResult> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.is_empty() {
-        return Err("Empty header line".to_string());
+        return Err(anyhow::anyhow!("Empty header line"));
     }
     let repo_name_part = parts[0];
     let (repo, name) = parse_repo_name(repo_name_part)?;
-    let version = parts.get(1).ok_or("Missing version in header line")?;
+    let version = parts.get(1).ok_or_else(|| anyhow::anyhow!("Missing version in header line"))?;
     let installed = line.contains("[installed]");
     Ok(SearchResult {
         name: name.to_string(),
@@ -412,7 +479,7 @@ fn parse_header_line(line: &str) -> Result<SearchResult, String> {
     })
 }
 
-fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>, String> {
+fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>> {
     let mut results = Vec::new();
     let mut current_result: Option<SearchResult> = None;
     for line in output.lines() {

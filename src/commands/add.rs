@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+
 /// Add items (packages) to configuration files
 ///
 /// # Arguments
@@ -25,7 +27,7 @@ fn run_search_mode(terms: &[String]) {
             match selection {
                 Some(package_name) => {
                     if let Err(err) = add_package_to_config(&package_name) {
-                        crate::error::exit_with_error(&err);
+                        crate::error::exit_with_error(anyhow::anyhow!(err));
                     }
                 }
                 None => {
@@ -34,7 +36,7 @@ fn run_search_mode(terms: &[String]) {
             }
         }
         Err(e) => {
-            crate::error::exit_with_error(&format!("Search failed: {}", e));
+            crate::error::exit_with_error(anyhow::anyhow!("Search failed: {}", e));
         }
     }
 }
@@ -123,7 +125,7 @@ fn number_brackets(num: i32) -> String {
 }
 
 /// Add a package to the appropriate configuration file
-fn add_package_to_config(package_name: &str) -> Result<(), String> {
+fn add_package_to_config(package_name: &str) -> anyhow::Result<()> {
     let mut config_files = get_relevant_config_files()?;
 
     if config_files.is_empty() {
@@ -197,9 +199,9 @@ fn add_package_to_config(package_name: &str) -> Result<(), String> {
 
 /// Get relevant config files for the current system
 #[allow(clippy::collapsible_if)]
-fn get_relevant_config_files() -> Result<Vec<String>, String> {
+fn get_relevant_config_files() -> anyhow::Result<Vec<String>> {
     let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
 
     let mut files = Vec::new();
@@ -222,10 +224,10 @@ fn get_relevant_config_files() -> Result<Vec<String>, String> {
 }
 
 /// Get the main config file path
-fn get_main_config_path() -> Result<String, String> {
+fn get_main_config_path() -> anyhow::Result<String> {
     use std::path::PathBuf;
     let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let path = PathBuf::from(home)
         .join(crate::internal::constants::OWL_DIR)
         .join(crate::internal::constants::MAIN_CONFIG_FILE);
@@ -233,19 +235,19 @@ fn get_main_config_path() -> Result<String, String> {
 }
 
 /// Add a package to a config file
-fn add_package_to_file(package_name: &str, file_path: &str) -> Result<(), String> {
+fn add_package_to_file(package_name: &str, file_path: &str) -> anyhow::Result<()> {
     use std::fs;
 
     // Read existing content
     let content = if std::path::Path::new(file_path).exists() {
-        fs::read_to_string(file_path).map_err(|e| format!("Failed to read config file: {}", e))?
+        fs::read_to_string(file_path).map_err(|e| anyhow!("Failed to read config file: {}", e))?
     } else {
         String::new()
     };
 
     // Check if package already exists
     if content.lines().any(|line| line.trim() == package_name) {
-        return Err(format!(
+        return Err(anyhow!(
             "Package '{}' already exists in {}",
             package_name, file_path
         ));
@@ -277,7 +279,7 @@ fn add_package_to_file(package_name: &str, file_path: &str) -> Result<(), String
     // Write back to file
     let new_content = lines.join("\n") + "\n";
     fs::write(file_path, new_content)
-        .map_err(|e| format!("Failed to write to config file: {}", e))?;
+        .map_err(|e| anyhow!("Failed to write to config file: {}", e))?;
 
     Ok(())
 }

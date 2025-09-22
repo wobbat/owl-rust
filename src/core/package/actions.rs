@@ -52,12 +52,16 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
 pub fn categorize_packages(packages: &[String]) -> Result<(Vec<String>, Vec<String>), String> {
     if packages.is_empty() { return Ok((Vec::new(), Vec::new())); }
     let available = super::ParuPacman::new().batch_repo_available(packages)?;
-    let mut repo_packages = Vec::new();
-    let mut aur_packages = Vec::new();
-    for p in packages {
-        if available.contains(p) { repo_packages.push(p.clone()); }
-        else { aur_packages.push(p.clone()); }
-    }
+    let repo_packages: Vec<String> = packages
+        .iter()
+        .filter(|p| available.contains(&**p))
+        .cloned()
+        .collect();
+    let aur_packages: Vec<String> = packages
+        .iter()
+        .filter(|p| !available.contains(&**p))
+        .cloned()
+        .collect();
     Ok((repo_packages, aur_packages))
 }
 

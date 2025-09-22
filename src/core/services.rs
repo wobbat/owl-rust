@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use std::process::Command;
 
 /// Result of service configuration operations
@@ -10,29 +11,29 @@ pub struct ServiceResult {
 }
 
 /// Ensure all specified services are configured (enabled and started)
-fn check_enabled(service: &str) -> Result<bool, String> {
+fn check_enabled(service: &str) -> Result<bool> {
     let status = Command::new("sudo")
         .arg("systemctl")
         .arg("is-enabled")
         .arg("--quiet")
         .arg(service)
         .status()
-        .map_err(|e| format!("Failed to run systemctl is-enabled for {}: {}", service, e))?;
+        .map_err(|e| anyhow!("Failed to run systemctl is-enabled for {}: {}", service, e))?;
     Ok(status.success())
 }
 
-fn check_active(service: &str) -> Result<bool, String> {
+fn check_active(service: &str) -> Result<bool> {
     let status = Command::new("sudo")
         .arg("systemctl")
         .arg("is-active")
         .arg("--quiet")
         .arg(service)
         .status()
-        .map_err(|e| format!("Failed to run systemctl is-active for {}: {}", service, e))?;
+        .map_err(|e| anyhow!("Failed to run systemctl is-active for {}: {}", service, e))?;
     Ok(status.success())
 }
 
-pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, String> {
+pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult> {
     if services.is_empty() {
         return Ok(ServiceResult {
             changed: false,
@@ -61,10 +62,10 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
                 {
                     Ok(status) if status.success() => {
                         result.changed = true;
-                        result.enabled_services.push(service.clone());
+                        result.enabled_services.push(service.to_string());
                     }
                     Ok(_) | Err(_) => {
-                        result.failed_services.push(service.clone());
+                        result.failed_services.push(service.to_string());
                         eprintln!(
                             "{}",
                             crate::internal::color::red(&format!(
@@ -77,7 +78,7 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
                 }
             }
             Err(e) => {
-                result.failed_services.push(service.clone());
+                result.failed_services.push(service.to_string());
                 eprintln!(
                     "{}",
                     crate::internal::color::red(&format!(
@@ -101,10 +102,10 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
                 {
                     Ok(status) if status.success() => {
                         result.changed = true;
-                        result.started_services.push(service.clone());
+                        result.started_services.push(service.to_string());
                     }
                     Ok(_) | Err(_) => {
-                        result.failed_services.push(service.clone());
+                        result.failed_services.push(service.to_string());
                         eprintln!(
                             "{}",
                             crate::internal::color::red(&format!(
@@ -117,7 +118,7 @@ pub fn ensure_services_configured(services: &[String]) -> Result<ServiceResult, 
                 }
             }
             Err(e) => {
-                result.failed_services.push(service.clone());
+                result.failed_services.push(service.to_string());
                 eprintln!(
                     "{}",
                     crate::internal::color::red(&format!(

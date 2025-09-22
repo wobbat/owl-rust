@@ -1,4 +1,22 @@
 use crate::core::pm::PackageManager;
+use anyhow::Result;
+
+/// Helper function to handle operation errors with custom message
+fn handle_operation_error(operation: &str, result: Result<()>) {
+    if let Err(e) = result {
+        eprintln!(
+            "{}",
+            crate::internal::color::red(&format!("Failed to {}: {}", operation, e))
+        );
+    }
+}
+
+/// Helper function to handle operation errors with direct error message
+fn handle_direct_error(result: Result<()>) {
+    if let Err(e) = result {
+        eprintln!("{}", crate::internal::color::red(&e.to_string()));
+    }
+}
 
 /// Parameters for package operations
 #[derive(Debug)]
@@ -127,10 +145,7 @@ pub fn categorize_install_sets(to_install: &[String]) -> (Vec<String>, Vec<Strin
     match crate::core::package::categorize_packages(to_install) {
         Ok(result) => result,
         Err(e) => {
-            eprintln!(
-                "{}",
-                crate::internal::color::red(&format!("Failed to categorize packages: {}", e))
-            );
+            handle_operation_error("categorize packages", Err(e));
             (Vec::new(), Vec::new())
         }
     }
@@ -143,10 +158,7 @@ pub fn compute_aur_updates(dry_run: bool) -> Vec<String> {
     match super::analysis::get_aur_updates() {
         Ok(packages) => packages,
         Err(e) => {
-            eprintln!(
-                "{}",
-                crate::internal::color::red(&format!("Failed to check AUR updates: {}", e))
-            );
+            handle_operation_error("check AUR updates", Err(e));
             Vec::new()
         }
     }
@@ -167,8 +179,8 @@ pub fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
             crate::internal::color::blue("info:"),
             repo_to_install.join(", ")
         );
-    } else if let Err(e) = crate::core::pm::ParuPacman::new().install_repo(repo_to_install) {
-        eprintln!("{}", crate::internal::color::red(&e));
+    } else {
+        handle_direct_error(crate::core::pm::ParuPacman::new().install_repo(repo_to_install));
     }
 }
 
@@ -197,14 +209,12 @@ pub fn handle_aur_operations(
             );
             return;
         }
-        if !aur_to_install.is_empty()
-            && let Err(e) = crate::core::pm::ParuPacman::new().install_aur(aur_to_install) {
-                eprintln!("{}", crate::internal::color::red(&e));
-            }
-        if !aur_to_update.is_empty()
-            && let Err(e) = crate::core::pm::ParuPacman::new().update_aur(aur_to_update) {
-                eprintln!("{}", crate::internal::color::red(&e));
-            }
+        if !aur_to_install.is_empty() {
+            handle_direct_error(crate::core::pm::ParuPacman::new().install_aur(aur_to_install));
+        }
+        if !aur_to_update.is_empty() {
+            handle_direct_error(crate::core::pm::ParuPacman::new().update_aur(aur_to_update));
+        }
     } else {
         println!(
             "  {}",
@@ -221,10 +231,5 @@ pub fn update_repo_packages(dry_run: bool) {
         );
         return;
     }
-    if let Err(err) = crate::core::pm::ParuPacman::new().update_repo() {
-        eprintln!(
-            "{}",
-            crate::internal::color::red(&format!("Repo update failed: {}", err))
-        );
-    }
+    handle_operation_error("update repo packages", crate::core::pm::ParuPacman::new().update_repo());
 }

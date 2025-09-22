@@ -1,6 +1,52 @@
 use std::collections::HashSet;
+use std::io::Write;
 use std::process::Command;
 use std::sync::OnceLock;
+use std::thread;
+use std::time::Duration;
+
+/// Retry a command with exponential backoff for network-related failures
+fn retry_command<F, T>(mut operation: F, max_retries: usize) -> Result<T, String>
+where
+    F: FnMut() -> Result<T, String>,
+{
+    let mut last_error = None;
+
+    for attempt in 0..=max_retries {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(err) => {
+                last_error = Some(err.clone());
+
+                // Check if this is a network-related error that we should retry
+                let should_retry = err.contains("Connection reset by peer")
+                    || err.contains("error sending request")
+                    || err.contains("error trying to connect")
+                    || err.contains("os error 104");
+
+                if !should_retry || attempt == max_retries {
+                    return Err(err);
+                }
+
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                let delay = Duration::from_secs(1 << attempt);
+
+                // Clear the current line and show retry status
+                print!("\r\x1b[2K");
+                std::io::stdout().flush().ok();
+                print!("Retrying due to network errors... ({}/{})", attempt + 1, max_retries + 1);
+                std::io::stdout().flush().ok();
+                thread::sleep(delay);
+
+                // Clear the line for the next operation
+                print!("\r\x1b[2K");
+                std::io::stdout().flush().ok();
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "Unknown error".to_string()))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageSource {
@@ -89,31 +135,36 @@ impl PackageManager for ParuPacman {
     }
 
     fn upgrade_count(&self) -> Result<usize, String> {
-        let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
-            .args(["-Qu", "-q"])
-            .output()
-            .map_err(|e| {
-                format!(
-                    "Failed to run {} -Qu: {}",
-                    crate::internal::constants::PACKAGE_MANAGER,
-                    e
-                )
-            })?;
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            Ok(stdout.lines().count())
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if output.status.code() == Some(1) && stderr.trim().is_empty() {
-                Ok(0)
-            } else {
-                Err(format!(
-                    "{} -Qu failed: {}",
-                    crate::internal::constants::PACKAGE_MANAGER,
-                    stderr
-                ))
-            }
-        }
+        retry_command(
+            || {
+                let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
+                    .args(["-Qu", "-q"])
+                    .output()
+                    .map_err(|e| {
+                        format!(
+                            "Failed to run {} -Qu: {}",
+                            crate::internal::constants::PACKAGE_MANAGER,
+                            e
+                        )
+                    })?;
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Ok(stdout.lines().count())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if output.status.code() == Some(1) && stderr.trim().is_empty() {
+                        Ok(0)
+                    } else {
+                        Err(format!(
+                            "{} -Qu failed: {}",
+                            crate::internal::constants::PACKAGE_MANAGER,
+                            stderr
+                        ))
+                    }
+                }
+            },
+            3, // Max 3 retries
+        )
     }
 
     fn get_aur_updates(&self) -> Result<Vec<String>, String> {
@@ -166,16 +217,21 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() {
             return Ok(());
         }
-        let status = Command::new(crate::internal::constants::PACKAGE_MANAGER)
-            .arg("-S")
-            .args(packages)
-            .status()
-            .map_err(|e| format!("Failed to install AUR packages: {}", e))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("Failed to install AUR packages: {}", status))
-        }
+        retry_command(
+            || {
+                let status = Command::new(crate::internal::constants::PACKAGE_MANAGER)
+                    .arg("-S")
+                    .args(packages)
+                    .status()
+                    .map_err(|e| format!("Failed to install AUR packages: {}", e))?;
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!("Failed to install AUR packages: {}", status))
+                }
+            },
+            3, // Max 3 retries
+        )
     }
 
     fn update_repo(&self) -> Result<(), String> {
@@ -230,62 +286,67 @@ impl PackageManager for ParuPacman {
         if terms.is_empty() {
             return Ok(Vec::new());
         }
-        let mut cmd = Command::new(crate::internal::constants::PACKAGE_MANAGER);
-        cmd.arg("-Ss");
-        cmd.args(terms);
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed to search packages: {}", e))?;
-        if !output.status.success() {
-            return Err(format!(
-                "Package search failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let mut results = Vec::new();
-        let mut current_result: Option<SearchResult> = None;
-        for line in stdout.lines() {
-            if line.starts_with(crate::internal::constants::PACKAGE_MANAGER) {
-                // New package entry
-                if let Some(result) = current_result.take() {
-                    results.push(result);
+        retry_command(
+            || {
+                let mut cmd = Command::new(crate::internal::constants::PACKAGE_MANAGER);
+                cmd.arg("-Ss");
+                cmd.args(terms);
+                let output = cmd
+                    .output()
+                    .map_err(|e| format!("Failed to search packages: {}", e))?;
+                if !output.status.success() {
+                    return Err(format!(
+                        "Package search failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    ));
                 }
-                let parts: Vec<&str> = line.split('/').collect();
-                if parts.len() >= 2 {
-                    let repo = parts[0].to_string();
-                    let name_and_ver = parts[1].trim();
-                    let name_parts: Vec<&str> = name_and_ver.split(' ').collect();
-                    if name_parts.len() >= 2 {
-                        let name = name_parts[0].to_string();
-                        let ver = name_parts[1].to_string();
-                        let source = if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo };
-                        current_result = Some(SearchResult {
-                            name,
-                            ver,
-                            source,
-                            repo,
-                            description: String::new(),
-                            installed: false,
-                        });
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let mut results = Vec::new();
+                let mut current_result: Option<SearchResult> = None;
+                for line in stdout.lines() {
+                    if line.starts_with(crate::internal::constants::PACKAGE_MANAGER) {
+                        // New package entry
+                        if let Some(result) = current_result.take() {
+                            results.push(result);
+                        }
+                        let parts: Vec<&str> = line.split('/').collect();
+                        if parts.len() >= 2 {
+                            let repo = parts[0].to_string();
+                            let name_and_ver = parts[1].trim();
+                            let name_parts: Vec<&str> = name_and_ver.split(' ').collect();
+                            if name_parts.len() >= 2 {
+                                let name = name_parts[0].to_string();
+                                let ver = name_parts[1].to_string();
+                                let source = if repo == "aur" { PackageSource::Aur } else { PackageSource::Repo };
+                                current_result = Some(SearchResult {
+                                    name,
+                                    ver,
+                                    source,
+                                    repo,
+                                    description: String::new(),
+                                    installed: false,
+                                });
+                            }
+                        }
+                    } else if let Some(ref mut result) = current_result {
+                        // Description line
+                        let desc = line.trim();
+                        if !desc.is_empty() {
+                            result.description = desc.to_string();
+                        }
+                        // Check if installed (look for [installed] marker)
+                        if line.contains("[installed]") {
+                            result.installed = true;
+                        }
                     }
                 }
-            } else if let Some(ref mut result) = current_result {
-                // Description line
-                let desc = line.trim();
-                if !desc.is_empty() {
-                    result.description = desc.to_string();
+                if let Some(result) = current_result {
+                    results.push(result);
                 }
-                // Check if installed (look for [installed] marker)
-                if line.contains("[installed]") {
-                    result.installed = true;
-                }
-            }
-        }
-        if let Some(result) = current_result {
-            results.push(result);
-        }
-        Ok(results)
+                Ok(results)
+            },
+            3, // Max 3 retries
+        )
     }
 
     fn is_package_group(&self, package_name: &str) -> Result<bool, String> {

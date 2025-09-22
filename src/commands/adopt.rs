@@ -1,4 +1,4 @@
-use crate::internal::color as colo;
+use crate::internal::color;
 
 pub fn run(items: &[String], all: bool) {
     // Determine target packages to adopt
@@ -6,7 +6,7 @@ pub fn run(items: &[String], all: bool) {
         match crate::core::config::Config::load_all_relevant_config_files() {
             Ok(cfg) => cfg.packages.keys().cloned().collect(),
             Err(e) => {
-                eprintln!("{}", colo::red(&format!("Failed to load config: {}", e)));
+                eprintln!("{}", color::red(&format!("Failed to load config: {}", e)));
                 return;
             }
         }
@@ -15,14 +15,14 @@ pub fn run(items: &[String], all: bool) {
     };
 
     if targets.is_empty() {
-        println!("{}", colo::yellow("No packages to adopt"));
+        println!("{}", color::yellow("No packages to adopt"));
         return;
     }
 
     let mut state = match crate::core::state::PackageState::load() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("{}", colo::red(&format!("Failed to load state: {}", e)));
+            eprintln!("{}", color::red(&format!("Failed to load state: {}", e)));
             return;
         }
     };
@@ -43,20 +43,20 @@ pub fn run(items: &[String], all: bool) {
             }
             Ok(false) => skipped_not_installed.push(pkg),
             Err(e) => {
-                eprintln!("{}", colo::red(&format!("Failed to check {}: {}", pkg, e)));
+                eprintln!("{}", color::red(&format!("Failed to check {}: {}", pkg, e)));
             }
         }
     }
 
     if let Err(e) = state.save() {
-        eprintln!("{}", colo::red(&format!("Failed to save state: {}", e)));
+        eprintln!("{}", color::red(&format!("Failed to save state: {}", e)));
         return;
     }
 
     if !adopted.is_empty() {
         println!(
             "{} Adopted {} package(s): {}",
-            colo::green("✓"),
+            color::green("✓"),
             adopted.len(),
             adopted.join(", ")
         );
@@ -64,14 +64,14 @@ pub fn run(items: &[String], all: bool) {
     if !skipped_already.is_empty() {
         println!(
             "{} Already managed: {}",
-            colo::blue("info:"),
+            color::blue("info:"),
             skipped_already.join(", ")
         );
     }
     if !skipped_not_installed.is_empty() {
         println!(
             "{} Not installed (skipped): {}",
-            colo::yellow("!"),
+            color::yellow("!"),
             skipped_not_installed.join(", ")
         );
     }

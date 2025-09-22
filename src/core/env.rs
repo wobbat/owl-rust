@@ -1,21 +1,22 @@
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::env as std_env;
 use std::fs;
 use std::path::Path;
 
 /// Get the Owl directory path
-fn owl_dir() -> Result<std::path::PathBuf, String> {
-    let home = std_env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+fn owl_dir() -> Result<std::path::PathBuf> {
+    let home = std_env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     Ok(Path::new(&home).join(crate::internal::constants::OWL_DIR))
 }
 
 /// Get bash environment file path
-fn env_file_bash() -> Result<std::path::PathBuf, String> {
+fn env_file_bash() -> Result<std::path::PathBuf> {
     Ok(owl_dir()?.join(crate::internal::constants::ENV_BASH_FILE))
 }
 
 /// Get fish environment file path
-fn env_file_fish() -> Result<std::path::PathBuf, String> {
+fn env_file_fish() -> Result<std::path::PathBuf> {
     Ok(owl_dir()?.join(crate::internal::constants::ENV_FISH_FILE))
 }
 
@@ -39,7 +40,7 @@ pub fn collect_all_env_vars(config: &crate::core::config::Config) -> Vec<(String
 pub fn apply_environment_variables(
     config: &crate::core::config::Config,
     dry_run: bool,
-) -> Result<(), String> {
+) -> Result<()> {
     let vars = collect_all_env_vars(config);
     if vars.is_empty() {
         return Ok(());
@@ -64,7 +65,7 @@ pub fn apply_environment_variables(
         bash.push_str(&format!("export {}=\"{}\"\n", k, v));
     }
     fs::write(&bash_path, bash)
-        .map_err(|e| format!("Failed to write {}: {}", bash_path.display(), e))?;
+        .map_err(|e| anyhow!("Failed to write {}: {}", bash_path.display(), e))?;
 
     // Write fish
     let fish_path = env_file_fish()?;
@@ -73,7 +74,7 @@ pub fn apply_environment_variables(
         fish.push_str(&format!("set -x {} \"{}\"\n", k, v));
     }
     fs::write(&fish_path, fish)
-        .map_err(|e| format!("Failed to write {}: {}", fish_path.display(), e))?;
+        .map_err(|e| anyhow!("Failed to write {}: {}", fish_path.display(), e))?;
 
     println!(
         "  {} Environment exported (bash, fish)",

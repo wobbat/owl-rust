@@ -3,6 +3,7 @@
 //! This module handles the synchronization of dotfiles from the dotfiles directory
 //! to their target locations in the user's home directory.
 
+use anyhow::{anyhow, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,9 +30,9 @@ pub struct DotfileAction {
     pub status: DotfileStatus,
 }
 
-fn owl_dotfiles_dir() -> Result<PathBuf, String> {
+fn owl_dotfiles_dir() -> Result<PathBuf> {
     let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     Ok(Path::new(&home)
         .join(crate::internal::constants::OWL_DIR)
         .join(crate::internal::constants::DOTFILES_DIR))
@@ -43,9 +44,10 @@ fn expand_tilde(path: &str) -> String {
             return format!("{}/{}", home, rest);
         }
     } else if path == "~"
-        && let Ok(home) = std::env::var("HOME") {
-            return home;
-        }
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return home;
+    }
     path.to_string()
 }
 
@@ -53,15 +55,15 @@ fn collect_files_recursively(
     root: &Path,
     rels: &mut Vec<PathBuf>,
     base: &Path,
-) -> Result<(), String> {
+) -> Result<()> {
     for entry in
-        fs::read_dir(root).map_err(|e| format!("Failed to read dir {}: {}", root.display(), e))?
+        fs::read_dir(root).map_err(|e| anyhow!("Failed to read dir {}: {}", root.display(), e))?
     {
         let entry =
-            entry.map_err(|e| format!("Failed to read entry in {}: {}", root.display(), e))?;
+            entry.map_err(|e| anyhow!("Failed to read entry in {}: {}", root.display(), e))?;
         let ty = entry
             .file_type()
-            .map_err(|e| format!("Failed to stat {}: {}", entry.path().display(), e))?;
+            .map_err(|e| anyhow!("Failed to stat {}: {}", entry.path().display(), e))?;
         let path = entry.path();
         if ty.is_dir() {
             collect_files_recursively(&path, rels, base)?;
@@ -73,7 +75,7 @@ fn collect_files_recursively(
     Ok(())
 }
 
-fn dirs_in_sync(src: &Path, dst: &Path) -> Result<bool, String> {
+fn dirs_in_sync(src: &Path, dst: &Path) -> Result<bool> {
     if !dst.exists() || !dst.is_dir() {
         return Ok(false);
     }
@@ -113,46 +115,46 @@ fn dirs_in_sync(src: &Path, dst: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
-    let data = fs::read(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+fn sha256_file(path: &Path) -> Result<String> {
+    let data = fs::read(path).map_err(|e| anyhow!("Failed to read {}: {}", path.display(), e))?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn ensure_parent_dir(dest: &Path) -> Result<(), String> {
+fn ensure_parent_dir(dest: &Path) -> Result<()> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
+            .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
     }
     Ok(())
 }
 
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
     if src == dst {
         return Ok(());
     }
     // Create destination directory
     fs::create_dir_all(dst)
-        .map_err(|e| format!("Failed to create directory {}: {}", dst.display(), e))?;
+        .map_err(|e| anyhow!("Failed to create directory {}: {}", dst.display(), e))?;
 
     for entry in
-        fs::read_dir(src).map_err(|e| format!("Failed to read dir {}: {}", src.display(), e))?
+        fs::read_dir(src).map_err(|e| anyhow!("Failed to read dir {}: {}", src.display(), e))?
     {
         let entry =
-            entry.map_err(|e| format!("Failed to read entry in {}: {}", src.display(), e))?;
+            entry.map_err(|e| anyhow!("Failed to read entry in {}: {}", src.display(), e))?;
         let ty = entry
             .file_type()
-            .map_err(|e| format!("Failed to stat {}: {}", entry.path().display(), e))?;
+            .map_err(|e| anyhow!("Failed to stat {}: {}", entry.path().display(), e))?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if ty.is_dir() {
             copy_dir_all(&src_path, &dst_path)?;
         } else if ty.is_file() {
             let data = fs::read(&src_path)
-                .map_err(|e| format!("Failed to read {}: {}", src_path.display(), e))?;
+                .map_err(|e| anyhow!("Failed to read {}: {}", src_path.display(), e))?;
             fs::write(&dst_path, &data)
-                .map_err(|e| format!("Failed to write {}: {}", dst_path.display(), e))?;
+                .map_err(|e| anyhow!("Failed to write {}: {}", dst_path.display(), e))?;
         }
     }
     Ok(())
@@ -181,7 +183,7 @@ pub fn get_dotfile_mappings(config: &crate::core::config::Config) -> Vec<Dotfile
 }
 
 /// Return true if any mapping requires action
-pub fn has_actionable_dotfiles(mappings: &[DotfileMapping]) -> Result<bool, String> {
+pub fn has_actionable_dotfiles(mappings: &[DotfileMapping]) -> Result<bool> {
     for m in mappings {
         let src = owl_dotfiles_dir()?.join(&m.source);
         let dst = expand_tilde(&m.destination);
@@ -209,7 +211,7 @@ pub fn has_actionable_dotfiles(mappings: &[DotfileMapping]) -> Result<bool, Stri
 pub fn apply_dotfiles(
     mappings: &[DotfileMapping],
     dry_run: bool,
-) -> Result<Vec<DotfileAction>, String> {
+) -> Result<Vec<DotfileAction>> {
     let mut actions = Vec::new();
     for m in mappings {
         let src = owl_dotfiles_dir()?.join(&m.source);
@@ -235,7 +237,7 @@ pub fn apply_dotfiles(
                 // Remove destination directory if it exists, then copy entire source
                 if dst.exists() {
                     fs::remove_dir_all(&dst).map_err(|e| {
-                        format!("Failed to remove directory {}: {}", dst.display(), e)
+                        anyhow!("Failed to remove directory {}: {}", dst.display(), e)
                     })?;
                 }
                 copy_dir_all(&src, &dst)?;
@@ -243,13 +245,13 @@ pub fn apply_dotfiles(
                 // Remove destination file if it exists, then copy source file
                 if dst.exists() {
                     fs::remove_file(&dst)
-                        .map_err(|e| format!("Failed to remove file {}: {}", dst.display(), e))?;
+                        .map_err(|e| anyhow!("Failed to remove file {}: {}", dst.display(), e))?;
                 }
                 ensure_parent_dir(&dst)?;
                 let data = fs::read(&src)
-                    .map_err(|e| format!("Failed to read {}: {}", src.display(), e))?;
+                    .map_err(|e| anyhow!("Failed to read {}: {}", src.display(), e))?;
                 fs::write(&dst, &data)
-                    .map_err(|e| format!("Failed to write {}: {}", dst.display(), e))?;
+                    .map_err(|e| anyhow!("Failed to write {}: {}", dst.display(), e))?;
             }
         }
 

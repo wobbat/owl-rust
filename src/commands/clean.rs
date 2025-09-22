@@ -1,26 +1,27 @@
 use std::fs;
+use anyhow::{anyhow, Result};
 
 use crate::core::config::Config;
 use crate::internal::color;
 
-pub fn handle_clean(filename: &str) -> Result<(), String> {
+pub fn handle_clean(filename: &str) -> Result<()> {
     // Read and parse the config file
     let config =
-        Config::parse_file(filename).map_err(|e| format!("Failed to parse {}: {}", filename, e))?;
+        Config::parse_file(filename).map_err(|e| anyhow!("Failed to parse {}: {}", filename, e))?;
 
     // Optimize the config
     let optimized_content = optimize_config(&config);
 
     // Write back to the file
     fs::write(filename, optimized_content)
-        .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+        .map_err(|e| anyhow!("Failed to write {}: {}", filename, e))?;
 
     Ok(())
 }
 
-pub fn handle_clean_all() -> Result<(), String> {
+pub fn handle_clean_all() -> Result<()> {
     let config_files =
-        get_all_config_files().map_err(|e| format!("Failed to discover config files: {}", e))?;
+        get_all_config_files().map_err(|e| anyhow!("Failed to discover config files: {}", e))?;
 
     if config_files.is_empty() {
         println!("[{}]", color::blue("clean"));
@@ -64,11 +65,11 @@ pub fn handle_clean_all() -> Result<(), String> {
     Ok(())
 }
 
-fn get_all_config_files() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_all_config_files() -> Result<Vec<String>> {
     use std::env;
     use std::path::Path;
 
-    let home = env::var("HOME").map_err(|_| "HOME environment variable not set")?;
+    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
 
     let mut files = Vec::new();

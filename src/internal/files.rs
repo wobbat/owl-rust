@@ -3,6 +3,7 @@
 use std::env;
 use std::path::Path;
 use std::process::Command;
+use anyhow::{anyhow, Result};
 
 /// Scan a directory for .owl files and add them to the files vector
 pub fn scan_directory_for_owl_files(directory_path: &str, files: &mut Vec<String>) {
@@ -17,26 +18,26 @@ pub fn scan_directory_for_owl_files(directory_path: &str, files: &mut Vec<String
 }
 
 /// Open a file in the user's preferred editor
-pub fn open_editor(path: &str) -> Result<(), String> {
+pub fn open_editor(path: &str) -> Result<()> {
     let editor = env::var("EDITOR")
         .unwrap_or_else(|_| crate::internal::constants::DEFAULT_EDITOR.to_string());
 
     Command::new(&editor)
         .arg(path)
         .status()
-        .map_err(|e| format!("Failed to open editor '{}': {}", editor, e))
+        .map_err(|e| anyhow!("Failed to open editor '{}': {}", editor, e))
         .and_then(|status| {
             if status.success() {
                 Ok(())
             } else {
-                Err(format!("Editor '{}' exited with error", editor))
+                Err(anyhow!("Editor '{}' exited with error", editor))
             }
         })
 }
 
 /// Find a config file in the standard locations
-pub fn find_config_file(arg: &str) -> Result<String, String> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+pub fn find_config_file(arg: &str) -> Result<String> {
+    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
 
     let base_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
     let search_paths = [
@@ -81,12 +82,12 @@ pub fn find_config_file(arg: &str) -> Result<String, String> {
         }
     }
 
-    Err("config file not found".to_string())
+    Err(anyhow!("config file not found"))
 }
 
 /// Get the path for a dotfile
-pub fn get_dotfile_path(filename: &str) -> Result<String, String> {
-    let home = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+pub fn get_dotfile_path(filename: &str) -> Result<String> {
+    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
 
     Ok(format!(
         "{}/{}/{}/{}",

@@ -1,19 +1,21 @@
 use std::collections::HashSet;
 use std::env;
 use std::path::Path;
+use anyhow::{anyhow, Result};
 
 use super::Config;
 
 impl Config {
-    pub fn load_all_relevant_config_files() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_all_relevant_config_files() -> Result<Self> {
+        let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
         Self::load_all_relevant_config_files_from_path(
-            Path::new(&env::var("HOME")?).join(crate::internal::constants::OWL_DIR),
+            Path::new(&home).join(crate::internal::constants::OWL_DIR),
         )
     }
 
     pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(
         owl_root: P,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> Result<Self> {
         let mut config = Config::new();
         let owl_root = owl_root.as_ref();
 
@@ -47,7 +49,7 @@ impl Config {
     fn load_config_if_exists(
         config: &mut Config,
         path: &Path,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         if path.exists() {
             let loaded_config = Self::parse_file(path)?;
             config.add_if_not_exists(loaded_config);
@@ -59,7 +61,7 @@ impl Config {
         groups_path: &Path,
         config: &mut Config,
         processed_groups: &mut HashSet<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         let mut groups_to_process: Vec<String> = config.groups.clone();
 
         while let Some(group_name) = groups_to_process.pop() {

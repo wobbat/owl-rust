@@ -1,10 +1,11 @@
+use anyhow::{anyhow, Result};
 use super::Config;
 
 /// Validate a provided .owl config file can be parsed
-pub fn run_configcheck(path: &str) -> Result<(), String> {
+pub fn run_configcheck(path: &str) -> Result<()> {
     let p = std::path::Path::new(path);
     if !p.exists() {
-        return Err(format!("Config file not found: {}", path));
+        return Err(anyhow!("Config file not found: {}", path));
     }
     match Config::parse_file(p) {
         Ok(_) => {
@@ -15,15 +16,14 @@ pub fn run_configcheck(path: &str) -> Result<(), String> {
             );
             Ok(())
         }
-        Err(e) => Err(format!("Failed to parse {}: {}", path, e)),
+        Err(e) => Err(anyhow!("Failed to parse {}: {}", path, e)),
     }
 }
 
 /// Validate and print the full config chain (main, hostname, groups)
-pub fn run_full_configcheck() -> Result<(), String> {
-    let owl_root =
-        std::path::Path::new(&std::env::var("HOME").map_err(|_| "HOME not set".to_string())?)
-            .join(crate::internal::constants::OWL_DIR);
+pub fn run_full_configcheck() -> Result<()> {
+    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let owl_root = std::path::Path::new(&home).join(crate::internal::constants::OWL_DIR);
     println!("Loading config from: {}", owl_root.display());
 
     // Check main config
@@ -76,7 +76,7 @@ pub fn run_full_configcheck() -> Result<(), String> {
             );
             println!(
                 "{}",
-                serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?
+                serde_json::to_string_pretty(&config).map_err(|e| anyhow!("Failed to serialize config: {}", e))?
             );
 
             // Print summary
@@ -109,16 +109,16 @@ pub fn run_full_configcheck() -> Result<(), String> {
 
             Ok(())
         }
-        Err(e) => Err(format!("Failed to load full config: {}", e)),
+        Err(e) => Err(anyhow!("Failed to load full config: {}", e)),
     }
 }
 
 /// Show the host-specific config path for this machine
-pub fn run_confighost() -> Result<(), String> {
+pub fn run_confighost() -> Result<()> {
     let hostname =
         crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
     let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let path = std::path::Path::new(&home)
         .join(crate::internal::constants::OWL_DIR)
         .join("hosts")
@@ -132,7 +132,7 @@ pub fn run_confighost() -> Result<(), String> {
 
 /// Return list of packages declared in config that are not installed
 #[cfg(test)]
-pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>, String> {
+pub fn get_uninstalled_packages(config: &Config) -> Result<Vec<String>> {
     let installed = crate::core::package::get_installed_packages()?;
     let mut missing = Vec::new();
     for name in config.packages.keys() {

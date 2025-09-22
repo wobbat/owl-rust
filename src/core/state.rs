@@ -1,9 +1,42 @@
 //! Package state management for tracking untracked and hidden packages
 
 use crate::internal::constants;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
+
+/// Generic trait for state persistence operations
+trait StatePersistence<T> {
+    const FILE_NAME: &'static str;
+    const DEFAULT_VALUE: fn() -> T;
+
+    fn serialize(data: &T) -> Result<String>;
+    fn deserialize(content: &str) -> Result<T>;
+
+    fn load(state_dir: &Path) -> Result<T> {
+        let file_path = state_dir.join(Self::FILE_NAME);
+        if !file_path.exists() {
+            let default = Self::DEFAULT_VALUE();
+            Self::save(state_dir, &default)?;
+            return Ok(default);
+        }
+
+        let content = fs::read_to_string(&file_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", Self::FILE_NAME, e))?;
+        Self::deserialize(&content)
+    }
+
+    fn save(state_dir: &Path, data: &T) -> Result<()> {
+        let file_path = state_dir.join(Self::FILE_NAME);
+        let content = Self::serialize(data)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize {}: {}", Self::FILE_NAME, e))?;
+        fs::write(&file_path, content)
+            .map_err(|e| anyhow::anyhow!("Failed to write {}: {}", Self::FILE_NAME, e))?;
+        Ok(())
+    }
+}
 
 /// Default system packages that should not be tracked
 fn default_untracked_packages() -> Vec<String> {
@@ -47,17 +80,78 @@ pub struct PackageState {
     pub managed: Vec<String>,
 }
 
+
+
+/// Specific implementation for untracked packages (JSON format)
+struct UntrackedPackages;
+
+impl StatePersistence<Vec<String>> for UntrackedPackages {
+    const FILE_NAME: &'static str = "untracked.json";
+    const DEFAULT_VALUE: fn() -> Vec<String> = || default_untracked_packages();
+
+    fn serialize(data: &Vec<String>) -> Result<String> {
+        serde_json::to_string_pretty(data)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize untracked packages: {}", e))
+    }
+
+    fn deserialize(content: &str) -> Result<Vec<String>> {
+        serde_json::from_str(content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse untracked packages JSON: {}", e))
+    }
+}
+
+/// Specific implementation for hidden packages (plain text format)
+struct HiddenPackages;
+
+impl StatePersistence<Vec<String>> for HiddenPackages {
+    const FILE_NAME: &'static str = "hidden.txt";
+    const DEFAULT_VALUE: fn() -> Vec<String> = Vec::new;
+
+    fn serialize(data: &Vec<String>) -> Result<String> {
+        Ok(data.join("\n") + "\n")
+    }
+
+    fn deserialize(content: &str) -> Result<Vec<String>> {
+        Ok(content
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect())
+    }
+}
+
+/// Specific implementation for managed packages (JSON format)
+struct ManagedPackages;
+
+impl StatePersistence<Vec<String>> for ManagedPackages {
+    const FILE_NAME: &'static str = "managed.json";
+    const DEFAULT_VALUE: fn() -> Vec<String> = Vec::new;
+
+    fn serialize(data: &Vec<String>) -> Result<String> {
+        serde_json::to_string_pretty(data)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize managed packages: {}", e))
+    }
+
+    fn deserialize(content: &str) -> Result<Vec<String>> {
+        serde_json::from_str(content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse managed packages JSON: {}", e))
+    }
+}
+
 impl PackageState {
     /// Load package state from ~/.owl/.state directory
-    pub fn load() -> Result<Self, String> {
+    pub fn load() -> Result<Self> {
         let state_dir = Self::get_state_dir()?;
         if !state_dir.exists() {
             fs::create_dir_all(&state_dir)
-                .map_err(|e| format!("Failed to create state directory: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create state directory: {}", e))?;
         }
-        let untracked = Self::load_untracked_packages(&state_dir)?;
-        let hidden = Self::load_hidden_packages(&state_dir)?;
-        let managed = Self::load_managed_packages(&state_dir)?;
+
+        // Use trait-based loading for each state type
+        let untracked = UntrackedPackages::load(&state_dir)?;
+        let hidden = HiddenPackages::load(&state_dir)?;
+        let managed = ManagedPackages::load(&state_dir)?;
+
         Ok(PackageState {
             untracked,
             hidden,
@@ -66,15 +160,17 @@ impl PackageState {
     }
 
     /// Save package state to disk
-    pub fn save(&self) -> Result<(), String> {
+    pub fn save(&self) -> Result<()> {
         let state_dir = Self::get_state_dir()?;
         if !state_dir.exists() {
             fs::create_dir_all(&state_dir)
-                .map_err(|e| format!("Failed to create state directory: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to create state directory: {}", e))?;
         }
-        Self::save_untracked_packages(&state_dir, &self.untracked)?;
-        Self::save_hidden_packages(&state_dir, &self.hidden)?;
-        Self::save_managed_packages(&state_dir, &self.managed)?;
+
+        // Use trait-based saving for each state type
+        UntrackedPackages::save(&state_dir, &self.untracked)?;
+        HiddenPackages::save(&state_dir, &self.hidden)?;
+        ManagedPackages::save(&state_dir, &self.managed)?;
         Ok(())
     }
 
@@ -122,105 +218,38 @@ impl PackageState {
         self.managed.retain(|p| p != package);
     }
 
-    fn get_state_dir() -> Result<PathBuf, String> {
+    fn get_state_dir() -> Result<PathBuf> {
         let home =
-            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+            std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
         Ok(PathBuf::from(home)
             .join(constants::OWL_DIR)
             .join(constants::STATE_DIR))
     }
 
-    fn load_untracked_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
-        let untracked_path = state_dir.join(constants::UNTRACKED_STATE);
-        if !untracked_path.exists() {
-            let default_packages = default_untracked_packages();
-            Self::save_untracked_packages(state_dir, &default_packages)?;
-            return Ok(default_packages);
-        }
-        let content = fs::read_to_string(&untracked_path)
-            .map_err(|e| format!("Failed to read untracked packages file: {}", e))?;
-        let packages: Vec<String> = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse untracked packages JSON: {}", e))?;
-        Ok(packages)
-    }
 
-    fn save_untracked_packages(
-        state_dir: &std::path::Path,
-        packages: &[String],
-    ) -> Result<(), String> {
-        let untracked_path = state_dir.join(constants::UNTRACKED_STATE);
-        let json = serde_json::to_string_pretty(packages)
-            .map_err(|e| format!("Failed to serialize untracked packages: {}", e))?;
-        fs::write(&untracked_path, json)
-            .map_err(|e| format!("Failed to write untracked packages file: {}", e))?;
-        Ok(())
-    }
-
-    fn load_hidden_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
-        let hidden_path = state_dir.join(constants::HIDDEN_STATE);
-        if !hidden_path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = fs::read_to_string(&hidden_path)
-            .map_err(|e| format!("Failed to read hidden packages file: {}", e))?;
-        let packages: Vec<String> = content
-            .lines()
-            .map(|line| line.trim().to_string())
-            .filter(|line| !line.is_empty())
-            .collect();
-        Ok(packages)
-    }
-
-    fn save_hidden_packages(
-        state_dir: &std::path::Path,
-        packages: &[String],
-    ) -> Result<(), String> {
-        let hidden_path = state_dir.join(constants::HIDDEN_STATE);
-        let content = packages.join("\n") + "\n";
-        fs::write(&hidden_path, content)
-            .map_err(|e| format!("Failed to write hidden packages file: {}", e))?;
-        Ok(())
-    }
-
-    fn load_managed_packages(state_dir: &std::path::Path) -> Result<Vec<String>, String> {
-        let managed_path = state_dir.join(constants::MANAGED_STATE);
-        if !managed_path.exists() {
-            let empty_packages: Vec<String> = Vec::new();
-            Self::save_managed_packages(state_dir, &empty_packages)?;
-            return Ok(empty_packages);
-        }
-        let content = fs::read_to_string(&managed_path)
-            .map_err(|e| format!("Failed to read managed packages file: {}", e))?;
-        let packages: Vec<String> = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse managed packages JSON: {}", e))?;
-        Ok(packages)
-    }
-
-    fn save_managed_packages(
-        state_dir: &std::path::Path,
-        packages: &[String],
-    ) -> Result<(), String> {
-        let managed_path = state_dir.join(constants::MANAGED_STATE);
-        let json = serde_json::to_string_pretty(packages)
-            .map_err(|e| format!("Failed to serialize managed packages: {}", e))?;
-        fs::write(&managed_path, json)
-            .map_err(|e| format!("Failed to write managed packages file: {}", e))?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    // Use a mutex to ensure tests don't interfere with each other
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn setup_test_home() -> tempfile::TempDir {
+        let temp_dir = tempdir().expect("Failed to create temp directory");
+        unsafe { std::env::set_var("HOME", temp_dir.path()) };
+        temp_dir
+    }
 
     #[test]
     fn test_load_initial_state() {
-        let temp_dir = tempdir().unwrap();
-        unsafe {
-            std::env::set_var("HOME", temp_dir.path());
-        }
-        let state = PackageState::load().unwrap();
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let _temp_dir = setup_test_home();
+
+        let state = PackageState::load().expect("Failed to load package state");
         assert!(!state.untracked.is_empty());
         assert!(state.is_untracked("linux"));
         assert!(state.is_untracked("base"));
@@ -228,11 +257,10 @@ mod tests {
 
     #[test]
     fn test_add_remove_untracked() {
-        let temp_dir = tempdir().unwrap();
-        unsafe {
-            std::env::set_var("HOME", temp_dir.path());
-        }
-        let mut state = PackageState::load().unwrap();
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let _temp_dir = setup_test_home();
+
+        let mut state = PackageState::load().expect("Failed to load package state");
         state.add_untracked("test-package".to_string());
         assert!(state.is_untracked("test-package"));
         state.remove_untracked("test-package");

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use std::path::Path;
+use anyhow::{anyhow, Result};
 
 use super::{Config, Package};
 
 impl Config {
-    pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = std::fs::read_to_string(path)?;
+    pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow!("Failed to read config file: {}", e))?;
         Self::parse(&content)
     }
 
-    pub fn parse(content: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn parse(content: &str) -> Result<Self> {
         let mut config = Config::new();
         let mut current_package: Option<String> = None;
         let mut in_packages_section = false;
@@ -38,7 +40,7 @@ impl Config {
         current_package: &mut Option<String>,
         in_packages_section: &mut bool,
         line: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         if line.starts_with("@package ") || line.starts_with("@pkg ") {
             Self::parse_package_declaration(config, current_package, in_packages_section, line);
         } else if line == "@packages" || line == "@pkgs" {
@@ -125,7 +127,7 @@ impl Config {
         current_package: &Option<String>,
         line: &str,
         prefix: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         let rest = line.strip_prefix(prefix).unwrap();
         if let Some((source, sink)) = rest.split_once(" -> ") {
             if let Some(pkg_name) = current_package {
@@ -150,7 +152,7 @@ impl Config {
         config: &mut Config,
         current_package: &Option<String>,
         line: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         let service_part = line.strip_prefix(":service ").unwrap();
         let service_name = service_part
             .split('[')
@@ -170,7 +172,7 @@ impl Config {
         config: &mut Config,
         current_package: &Option<String>,
         line: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         let env_part = line.strip_prefix(":env ").unwrap();
         if let Some((key, value)) = env_part.split_once('=') {
             if let Some(pkg_name) = current_package {
@@ -187,7 +189,7 @@ impl Config {
     fn parse_global_env_directive(
         config: &mut Config,
         line: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         let env_part = line.strip_prefix("@env ").unwrap();
         if let Some((key, value)) = env_part.split_once('=') {
             config

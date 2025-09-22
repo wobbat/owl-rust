@@ -3,6 +3,7 @@
 use crate::core::config::Config;
 use crate::core::pm::{PackageManager, ParuPacman, SearchResult};
 use crate::core::state::PackageState;
+use anyhow::Result;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -17,7 +18,7 @@ pub enum PackageAction {
 static INSTALLED_CACHE: OnceLock<HashSet<String>> = OnceLock::new();
 static PACKAGE_COUNT_CACHE: OnceLock<usize> = OnceLock::new();
 
-fn query_installed_packages() -> Result<HashSet<String>, String> {
+fn query_installed_packages() -> Result<HashSet<String>> {
     ParuPacman::new().list_installed()
 }
 
@@ -25,7 +26,7 @@ fn query_installed_packages() -> Result<HashSet<String>, String> {
 pub fn plan_package_actions(
     config: &Config,
     state: &PackageState,
-) -> Result<Vec<PackageAction>, String> {
+) -> Result<Vec<PackageAction>> {
     let installed = get_installed_packages()?;
     let desired: HashSet<String> = config.packages.keys().cloned().collect();
 
@@ -51,7 +52,7 @@ pub fn plan_package_actions(
 }
 
 /// Get list of all installed packages
-pub fn get_installed_packages() -> Result<HashSet<String>, String> {
+pub fn get_installed_packages() -> Result<HashSet<String>> {
     if let Some(cached) = INSTALLED_CACHE.get() {
         return Ok(cached.clone());
     }
@@ -61,7 +62,7 @@ pub fn get_installed_packages() -> Result<HashSet<String>, String> {
 }
 
 /// Remove unmanaged packages
-pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(), String> {
+pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<()> {
     if packages.is_empty() {
         return Ok(());
     }
@@ -77,7 +78,7 @@ pub fn remove_unmanaged_packages(packages: &[String], quiet: bool) -> Result<(),
 }
 
 /// Get the count of packages that can be upgraded
-pub fn get_package_count() -> Result<usize, String> {
+pub fn get_package_count() -> Result<usize> {
     if let Some(cached) = PACKAGE_COUNT_CACHE.get() {
         return Ok(*cached);
     }
@@ -87,7 +88,7 @@ pub fn get_package_count() -> Result<usize, String> {
 }
 
 /// Check if a package is installed
-pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
+pub fn is_package_installed(package_name: &str) -> Result<bool> {
     if let Some(cached) = INSTALLED_CACHE.get() {
         return Ok(cached.contains(package_name));
     }
@@ -100,7 +101,7 @@ pub fn is_package_installed(package_name: &str) -> Result<bool, String> {
 /// Check if a package or group is effectively installed
 /// For regular packages, checks if the package is installed
 /// For groups, checks if all packages in the group are installed
-pub fn is_package_or_group_installed(package_name: &str) -> Result<bool, String> {
+pub fn is_package_or_group_installed(package_name: &str) -> Result<bool> {
     // First check if it's a regular package (fastest check)
     if is_package_installed(package_name)? {
         return Ok(true);
@@ -137,25 +138,26 @@ pub fn is_repo_package(package_name: &str) -> Result<bool, String> {
 }
 
 /// Categorize packages into repo and AUR lists
-pub fn categorize_packages(packages: &[String]) -> Result<(Vec<String>, Vec<String>), String> {
+pub fn categorize_packages(packages: &[String]) -> Result<(Vec<String>, Vec<String>)> {
     if packages.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
     let available = ParuPacman::new().batch_repo_available(packages)?;
-    let mut repo_packages = Vec::new();
-    let mut aur_packages = Vec::new();
-    for p in packages {
-        if available.contains(p) {
-            repo_packages.push(p.clone());
-        } else {
-            aur_packages.push(p.clone());
-        }
-    }
+    let repo_packages: Vec<String> = packages
+        .iter()
+        .filter(|p| available.contains(&**p))
+        .cloned()
+        .collect();
+    let aur_packages: Vec<String> = packages
+        .iter()
+        .filter(|p| !available.contains(&**p))
+        .cloned()
+        .collect();
     Ok((repo_packages, aur_packages))
 }
 
 /// Search packages using the PackageManager
-pub fn search_packages(terms: &[String]) -> Result<Vec<SearchResult>, String> {
+pub fn search_packages(terms: &[String]) -> Result<Vec<SearchResult>> {
     ParuPacman::new().search_packages(terms)
 }
 

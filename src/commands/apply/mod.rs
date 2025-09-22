@@ -3,6 +3,18 @@ pub mod dotfiles;
 pub mod packages;
 pub mod system;
 
+use anyhow::Result;
+
+/// Helper function to handle operation errors with custom message
+fn handle_operation_error(operation: &str, result: Result<()>) {
+    if let Err(e) = result {
+        eprintln!(
+            "{}",
+            crate::internal::color::red(&format!("Failed to {}: {}", operation, e))
+        );
+    }
+}
+
 /// Run the apply command to update packages and system
 #[allow(clippy::collapsible_if)]
 pub fn run(opts: &crate::cli::handler::CliOptions) {
@@ -17,29 +29,20 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     }
 
     // Perform analysis with spinner
-    let analysis_result = crate::internal::util::run_with_spinner(
+    let analysis_result = crate::internal::util::execute_with_progress(
         analysis::analyze_system,
         "Analyzing system configuration",
     );
 
-    let (
-        package_count,
-        config,
-        mut state,
-        actions,
-        dotfile_count,
-        _env_var_count,
-        service_count,
-        config_package_count,
-    ) = match analysis_result {
+    let mut analysis = match analysis_result {
         Ok(result) => result,
         Err(err) => {
-            crate::error::exit_with_error(&err);
+            crate::error::exit_with_error(anyhow::anyhow!(err));
         }
     };
 
     // Separate actions into installs and removals
-    let to_install: Vec<String> = actions
+    let to_install: Vec<String> = analysis.actions
         .iter()
         .filter_map(|action| match action {
             crate::core::package::PackageAction::Install { name } => Some(name.clone()),
@@ -47,7 +50,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         })
         .collect();
 
-    let to_remove: Vec<String> = actions
+    let to_remove: Vec<String> = analysis.actions
         .iter()
         .filter_map(|action| match action {
             crate::core::package::PackageAction::Remove { name } => Some(name.clone()),
@@ -56,18 +59,18 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         .collect();
 
     crate::cli::ui::generate_apply_output_with_install(
-        package_count,
+        analysis.package_count,
         to_install.len(),
-        dotfile_count,
-        service_count,
+        analysis.dotfile_count,
+        analysis.service_count,
         to_remove.len(),
-        config_package_count,
+        analysis.config_package_count,
     );
 
     let had_uninstalled = !to_install.is_empty();
 
     // Handle removals first
-    packages::handle_removals(&to_remove, dry_run, &mut state);
+    packages::handle_removals(&to_remove, dry_run, &mut analysis.state);
 
     // Handle all package operations (install + update) in one combined phase
     let package_params = packages::PackageOperationParams {
@@ -78,7 +81,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     packages::install_and_update_packages(
         &to_install,
         &package_params,
-        &config,
+        &analysis.config,
     );
 
     // After operations, mark newly installed packages as managed (only if installed by our tool)
@@ -87,31 +90,20 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         for pkg in &to_install {
             match crate::core::package::is_package_or_group_installed(pkg) {
                 Ok(true) => {
-                    if !state.is_managed(pkg) {
-                        state.add_managed(pkg.clone());
+                    if !analysis.state.is_managed(pkg) {
+                        analysis.state.add_managed(pkg.clone());
                         changed = true;
                     }
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    eprintln!(
-                        "{}",
-                        crate::internal::color::red(&format!(
-                            "Failed to verify installation of {}: {}",
-                            pkg, e
-                        ))
-                    );
+                    handle_operation_error(&format!("verify installation of {}", pkg), Err(e));
                 }
             }
         }
 
         if changed {
-            if let Err(e) = state.save() {
-                eprintln!(
-                    "{}",
-                    crate::internal::color::red(&format!("Failed to save package state: {}", e))
-                );
-            }
+            handle_operation_error("save package state", analysis.state.save());
         }
     }
 }

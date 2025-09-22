@@ -1,90 +1,196 @@
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+ use std::process::{Command, Stdio};
+ use std::sync::{Arc, Mutex, mpsc};
+ use std::thread;
+ use std::time::Duration;
+ use anyhow::{anyhow, Result};
 
-// Shared spinner frames so all spinners look consistent
-const SPINNER_FRAMES: &[&str] = &["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
+/// Spinner display functionality
+pub mod spinner {
+    use super::*;
 
-fn spinner_print_frame(message: &str, frame_index: usize) {
-    print!(
-        "\r\x1b[2K  {} {}...",
-        crate::internal::color::blue(SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]),
-        message
-    );
-    io::stdout().flush().ok();
+    // Shared spinner frames so all spinners look consistent
+    const SPINNER_FRAMES: &[&str] = &["⁚", "⁖", "⁘", "⁛", "⁙", "⁛", "⁘", "⁖"];
+
+    /// Print a spinner frame with message
+    pub fn print_frame(message: &str, frame_index: usize) {
+        print!(
+            "\r\x1b[2K  {} {}...",
+            crate::internal::color::blue(SPINNER_FRAMES[frame_index % SPINNER_FRAMES.len()]),
+            message
+        );
+        io::stdout().flush().ok();
+    }
+
+    /// Clear the current spinner line
+    pub fn clear_line() {
+        print!("\r\x1b[2K");
+        io::stdout().flush().ok();
+    }
+
+    /// Configuration for spinner behavior
+    pub struct SpinnerConfig {
+        pub timeout_secs: u64,
+        pub delay_ms: u64,
+        pub cleanup_on_timeout: Option<Box<dyn FnOnce() + Send>>,
+    }
+
+    impl Default for SpinnerConfig {
+        fn default() -> Self {
+            Self {
+                timeout_secs: 30 * 60, // 30 minutes
+                delay_ms: crate::internal::constants::SPINNER_DELAY_MS,
+                cleanup_on_timeout: None,
+            }
+        }
+    }
+
+    impl SpinnerConfig {
+        pub fn with_cleanup<F>(mut self, cleanup: F) -> Self
+        where
+            F: FnOnce() + Send + 'static,
+        {
+            self.cleanup_on_timeout = Some(Box::new(cleanup));
+            self
+        }
+    }
 }
 
-fn spinner_clear_line() {
-    print!("\r\x1b[2K");
-    io::stdout().flush().ok();
+/// Command execution functionality
+pub mod command {
+    use super::*;
+
+    /// Common setup for command execution with pipes
+    pub struct CommandSetup {
+        pub child: Arc<Mutex<std::process::Child>>,
+        pub stdout: Option<std::process::ChildStdout>,
+        pub stderr: Option<std::process::ChildStderr>,
+    }
+
+    impl CommandSetup {
+        pub fn new(command: &str, args: &[&str]) -> anyhow::Result<Self> {
+            let mut cmd = Command::new(command);
+            cmd.args(args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+
+            let mut child = cmd.spawn()
+                .map_err(|e| anyhow!("Failed to spawn {}: {}", command, e))?;
+
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+
+            Ok(CommandSetup {
+                child: Arc::new(Mutex::new(child)),
+                stdout,
+                stderr,
+            })
+        }
+    }
 }
 
-/// Run a command with a spinner showing progress
-pub fn run_command_with_spinner(
-    command: &str,
-    args: &[&str],
-    message: &str,
-) -> Result<std::process::ExitStatus, String> {
-    let mut child = Command::new(command)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn {}: {}", command, e))?;
 
-    // Get stdout handle for reading output
-    let stdout = child.stdout.take().unwrap();
-    let current_status = Arc::new(Mutex::new(message.to_string()));
 
-    // Start thread to read and parse output
-    start_output_reader(stdout, Arc::clone(&current_status));
-
-    // Show spinner with dynamic status updates
+/// Run a spinner with common timeout and animation logic
+fn run_with_spinner_common<T, F, C>(
+    config: spinner::SpinnerConfig,
+    status_getter: F,
+    completion_checker: C,
+) -> anyhow::Result<T>
+where
+    F: Fn() -> String,
+    C: Fn() -> anyhow::Result<Option<anyhow::Result<T>>>,
+{
     let mut i = 0;
-    loop {
-        let current_msg = current_status.lock().unwrap().clone();
-        spinner_print_frame(&current_msg, i);
+    let start_time = std::time::Instant::now();
+    let timeout_duration = Duration::from_secs(config.timeout_secs);
 
-        // Check if process is done
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // Clear spinner line
-                spinner_clear_line();
-                return Ok(status);
+    loop {
+        let current_msg = status_getter();
+        spinner::print_frame(&current_msg, i);
+
+        // Check for timeout
+        if start_time.elapsed() > timeout_duration {
+            spinner::clear_line();
+            if let Some(cleanup) = config.cleanup_on_timeout {
+                cleanup();
+            }
+            return Err(anyhow!("Operation timed out after {} minutes",
+                config.timeout_secs / 60));
+        }
+
+        // Check if operation is complete
+        match completion_checker() {
+            Ok(Some(result)) => {
+                spinner::clear_line();
+                return result;
             }
             Ok(None) => {
                 // Still running, continue
-                std::thread::sleep(Duration::from_millis(
-                    crate::internal::constants::SPINNER_DELAY_MS,
-                ));
+                thread::sleep(Duration::from_millis(config.delay_ms));
                 i += 1;
             }
             Err(e) => {
-                spinner_clear_line();
-                return Err(format!("Failed to wait for command: {}", e));
+                spinner::clear_line();
+                return Err(e);
             }
         }
     }
 }
 
-/// Run a command with spinner and capture stderr for diagnostics
-pub fn run_command_with_spinner_capture(
+
+
+/// Execute a command with spinner progress display
+pub fn execute_command_with_spinner(
     command: &str,
     args: &[&str],
     message: &str,
-) -> Result<(std::process::ExitStatus, String), String> {
-    let mut child = Command::new(command)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn {}: {}", command, e))?;
+) -> anyhow::Result<std::process::ExitStatus> {
+    let setup = command::CommandSetup::new(command, args)?;
+
+    // Get stdout handle for reading output
+    let stdout = setup.stdout.ok_or_else(|| anyhow!("Failed to get child stdout"))?;
+    let current_status = Arc::new(Mutex::new(message.to_string()));
+
+    // Start thread to read and parse output
+    start_output_reader(stdout, Arc::clone(&current_status));
+
+    let child_clone = Arc::clone(&setup.child);
+    run_with_spinner_common(
+        spinner::SpinnerConfig::default().with_cleanup(move || {
+            if let Ok(mut child_guard) = child_clone.lock() {
+                let _ = child_guard.kill();
+            }
+        }),
+        || {
+            match current_status.lock() {
+                Ok(guard) => guard.clone(),
+                Err(poisoned) => poisoned.into_inner().clone(),
+            }
+        },
+        || {
+            match setup.child.lock().unwrap().try_wait() {
+                Ok(Some(status)) => Ok(Some(Ok(status))),
+                Ok(None) => Ok(None),
+                Err(e) => Err(anyhow!("Failed to wait for command: {}", e)),
+            }
+        },
+    )
+}
+
+
+
+/// Execute a command with spinner and capture stderr for diagnostics
+pub fn execute_command_with_stderr_capture(
+    command: &str,
+    args: &[&str],
+    message: &str,
+) -> anyhow::Result<(std::process::ExitStatus, String)> {
+    let setup = command::CommandSetup::new(command, args)?;
 
     // Take stdout/stderr for reading
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+    let stdout = setup.stdout.ok_or_else(|| anyhow!("Failed to get child stdout"))?;
+    let stderr = setup.stderr.ok_or_else(|| anyhow!("Failed to get child stderr"))?;
 
     let current_status = Arc::new(Mutex::new(message.to_string()));
     let captured_stderr = Arc::new(Mutex::new(String::new()));
@@ -98,47 +204,173 @@ pub fn run_command_with_spinner_capture(
         thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                let mut buf = captured_stderr.lock().unwrap();
-                buf.push_str(&line);
-                buf.push('\n');
+            for line in reader.lines().filter_map(Result::ok) {
+                match captured_stderr.lock() {
+                    Ok(mut buf) => {
+                        buf.push_str(&line);
+                        buf.push('\n');
+                    }
+                    Err(poisoned) => {
+                        // If mutex is poisoned, try to recover
+                        let mut buf = poisoned.into_inner();
+                        buf.push_str(&line);
+                        buf.push('\n');
+                    }
+                }
             }
         });
     }
 
-    // Show spinner with dynamic status updates
-    let mut i = 0;
-    let exit_status = loop {
-        let current_msg = current_status.lock().unwrap().clone();
-        spinner_print_frame(&current_msg, i);
+    let child_clone = Arc::clone(&setup.child);
+    let exit_status = run_with_spinner_common(
+        spinner::SpinnerConfig::default().with_cleanup(move || {
+            if let Ok(mut child_guard) = child_clone.lock() {
+                let _ = child_guard.kill();
+            }
+        }),
+        || {
+            match current_status.lock() {
+                Ok(guard) => guard.clone(),
+                Err(poisoned) => poisoned.into_inner().clone(),
+            }
+        },
+        || {
+            match setup.child.lock().unwrap().try_wait() {
+                Ok(Some(status)) => Ok(Some(Ok(status))),
+                Ok(None) => Ok(None),
+                Err(e) => Err(anyhow!("Failed to wait for command: {}", e)),
+            }
+        },
+    )?;
 
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // Clear spinner line
-                spinner_clear_line();
-                break status;
-            }
-            Ok(None) => {
-                std::thread::sleep(Duration::from_millis(
-                    crate::internal::constants::SPINNER_DELAY_MS,
-                ));
-                i += 1;
-            }
-            Err(e) => {
-                spinner_clear_line();
-                return Err(format!("Failed to wait for command: {}", e));
-            }
+    let stderr_output = match captured_stderr.lock() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => {
+            // If mutex is poisoned, use the poisoned value
+            poisoned.into_inner().clone()
         }
     };
-
-    let stderr_output = captured_stderr.lock().unwrap().clone();
     Ok((exit_status, stderr_output))
 }
 
-/// Run an operation with a spinner showing progress
-pub fn run_with_spinner<T, F>(operation: F, message: &str) -> Result<T, String>
+
+
+/// Execute a command with retry logic and spinner progress display
+pub fn execute_command_with_retry(
+    command: &str,
+    args: &[String],
+    base_message: &str,
+    max_retries: usize,
+) -> anyhow::Result<std::process::ExitStatus> {
+    let mut last_error = None;
+
+    for attempt in 0..=max_retries {
+        // Create a channel for spinner status updates
+        let (status_tx, _status_rx) = mpsc::channel();
+
+        // Start the command with spinner in a separate thread
+        let command_thread = {
+            let command = command.to_string();
+            let args = args.to_vec();
+            let base_message = base_message.to_string();
+            let status_tx = status_tx.clone();
+
+            thread::spawn(move || {
+                execute_command_with_dynamic_spinner(&command, &args, &base_message, attempt, max_retries, status_tx)
+            })
+        };
+
+        // Monitor the command and handle retries
+        match command_thread.join() {
+            Ok(Ok(status)) => return Ok(status),
+            Ok(Err(err)) => {
+                last_error = Some(err);
+
+                // Check if this is a network-related error that we should retry
+                 let err_msg = last_error.as_ref().unwrap().to_string();
+                 let should_retry = err_msg.contains("Connection reset by peer")
+                     || err_msg.contains("error sending request")
+                     || err_msg.contains("error trying to connect")
+                     || err_msg.contains("os error 104");
+
+                if !should_retry || attempt == max_retries {
+                    return Err(last_error.unwrap());
+                }
+
+                // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                let delay = Duration::from_secs(1 << attempt);
+
+                // Update spinner message to show retry status
+                let retry_message = format!("Retrying due to network errors... ({}/{})", attempt + 1, max_retries + 1);
+                spinner::clear_line();
+                print!("{}", retry_message);
+                std::io::stdout().flush().ok();
+
+                // Sleep for the retry delay
+                thread::sleep(delay);
+
+                // Clear the line for the next spinner iteration
+                spinner::clear_line();
+            }
+            Err(_) => {
+                return Err(anyhow!("Command thread panicked"));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| anyhow!("Unknown error")))
+}
+
+/// Internal function to run command with dynamic spinner updates
+fn execute_command_with_dynamic_spinner(
+    command: &str,
+    args: &[String],
+    base_message: &str,
+    attempt: usize,
+    max_retries: usize,
+    _status_tx: mpsc::Sender<String>,
+) -> anyhow::Result<std::process::ExitStatus> {
+    let setup = command::CommandSetup::new(command, &args.iter().map(|s| s.as_str()).collect::<Vec<_>>())?;
+
+    // Get stdout handle for reading output
+    let stdout = setup.stdout.ok_or_else(|| anyhow!("Failed to get child stdout"))?;
+    let current_status = Arc::new(Mutex::new(base_message.to_string()));
+
+    // Start thread to read and parse output
+    start_output_reader(stdout, Arc::clone(&current_status));
+
+    let child_clone = Arc::clone(&setup.child);
+    run_with_spinner_common(
+        spinner::SpinnerConfig::default().with_cleanup(move || {
+            if let Ok(mut child_guard) = child_clone.lock() {
+                let _ = child_guard.kill();
+            }
+        }),
+        || {
+            let base_msg = match current_status.lock() {
+                Ok(guard) => guard.clone(),
+                Err(poisoned) => poisoned.into_inner().clone(),
+            };
+            if attempt > 0 {
+                format!("{} (retry {}/{})", base_msg, attempt, max_retries + 1)
+            } else {
+                base_msg
+            }
+        },
+        || {
+            match setup.child.lock().unwrap().try_wait() {
+                Ok(Some(status)) => Ok(Some(Ok(status))),
+                Ok(None) => Ok(None),
+                Err(e) => Err(anyhow!("Failed to wait for command: {}", e)),
+            }
+        },
+    )
+}
+
+/// Execute an operation with spinner progress display
+pub fn execute_with_progress<T, F>(operation: F, message: &str) -> anyhow::Result<T>
 where
-    F: FnOnce() -> Result<T, String> + Send + 'static,
+    F: FnOnce() -> anyhow::Result<T> + Send + 'static,
     T: Send + 'static,
 {
     // Channel to communicate result from operation thread
@@ -150,32 +382,19 @@ where
         let _ = tx.send(result);
     });
 
-    // Animate spinner in main thread
-    let mut i = 0;
-    loop {
-        spinner_print_frame(message, i);
-
-        // Check if operation is done
-        match rx.try_recv() {
-            Ok(result) => {
-                // Clear spinner line
-                spinner_clear_line();
-                return result;
+    run_with_spinner_common(
+        spinner::SpinnerConfig::default(),
+        || message.to_string(),
+        || {
+            match rx.try_recv() {
+                Ok(result) => Ok(Some(result)),
+                Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    Err(anyhow!("Operation thread ended unexpectedly"))
+                }
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // Operation still running, continue spinning
-                thread::sleep(Duration::from_millis(
-                    crate::internal::constants::SPINNER_DELAY_MS,
-                ));
-                i += 1;
-            }
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                // Operation thread panicked or ended unexpectedly
-                spinner_clear_line();
-                return Err("Operation thread ended unexpectedly".to_string());
-            }
-        }
-    }
+        },
+    )
 }
 
 fn start_output_reader(stdout: std::process::ChildStdout, status: Arc<Mutex<String>>) {
@@ -197,7 +416,13 @@ fn start_output_reader(stdout: std::process::ChildStdout, status: Arc<Mutex<Stri
                 } else {
                     line.to_string()
                 };
-                *status.lock().unwrap() = status_msg;
+                match status.lock() {
+                    Ok(mut guard) => *guard = status_msg,
+                    Err(poisoned) => {
+                        // If mutex is poisoned, try to recover
+                        *poisoned.into_inner() = status_msg;
+                    }
+                }
             }
         }
     });

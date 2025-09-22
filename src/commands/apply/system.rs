@@ -34,7 +34,7 @@ pub fn handle_system_section_with_config(config: &crate::core::config::Config, d
             // Use spinner for service validation
             let spinner_msg = format!("Validating {} services...", services.len());
             let services_clone = services.clone();
-            let result = match crate::internal::util::run_with_spinner(
+            let result = match crate::internal::util::execute_with_progress(
                 move || crate::core::services::ensure_services_configured(&services_clone),
                 &spinner_msg,
             ) {

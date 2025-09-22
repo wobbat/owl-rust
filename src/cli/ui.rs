@@ -1,4 +1,4 @@
-use crate::internal::color as colo;
+use crate::internal::color;
 use std::io::Write;
 
 fn confirm_operation(
@@ -8,10 +8,10 @@ fn confirm_operation(
     detail_label: &str,
     prompt: &str,
 ) -> bool {
-    println!("\n  {} {}", colo::red(header_icon), header_text);
+    println!("\n  {} {}", color::red(header_icon), header_text);
     println!(
         "  {} {}: {}",
-        colo::yellow(&packages.len().to_string()),
+        color::yellow(&packages.len().to_string()),
         detail_label,
         packages.join(", ")
     );
@@ -36,37 +36,37 @@ pub fn generate_apply_output_with_install(
 ) {
     let host_name =
         crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
-    println!("[{}]", colo::blue("info"));
-    println!("  host: {}", colo::bold(&host_name));
+    println!("[{}]", color::blue("info"));
+    println!("  host: {}", color::bold(&host_name));
     println!(
         "  packages: {} ({}, {}, {})",
-        colo::bold(&(package_count + uninstalled_count).to_string()),
-        colo::green(&format!("install {}", uninstalled_count)),
-        colo::yellow(&format!("upgrade {}", package_count)),
-        colo::red(&format!("remove {}", remove_count))
+        color::bold(&(package_count + uninstalled_count).to_string()),
+        color::green(&format!("install {}", uninstalled_count)),
+        color::yellow(&format!("upgrade {}", package_count)),
+        color::red(&format!("remove {}", remove_count))
     );
-    println!("  managed pkgs: {}", colo::bold(&managed_count.to_string()));
+    println!("  managed pkgs: {}", color::bold(&managed_count.to_string()));
     if service_count > 0 {
-        println!("  services: {}", colo::bold(&service_count.to_string()));
+        println!("  services: {}", color::bold(&service_count.to_string()));
     }
     println!();
-    println!("[{}]", colo::yellow("packages"));
+    println!("[{}]", color::yellow("packages"));
     if package_count > 0 {
         println!(
             "  {} packages can be upgraded",
-            colo::yellow(&package_count.to_string())
+            color::yellow(&package_count.to_string())
         );
     } else {
         println!(
             "  {} {}",
             crate::internal::color::green("➔"),
-            colo::dim("no packages to upgrade")
+            color::dim("no packages to upgrade")
         );
     }
     if uninstalled_count > 0 {
         println!(
             "  {} packages can be installed",
-            colo::green(&uninstalled_count.to_string())
+            color::green(&uninstalled_count.to_string())
         );
     }
 }

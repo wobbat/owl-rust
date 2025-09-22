@@ -1,9 +1,10 @@
+use anyhow::{anyhow, Result};
 use crate::internal::files;
 
 /// Run the edit command to open files in editor
-pub fn run(typ: &str, arg: &str) -> Result<(), String> {
+pub fn run(typ: &str, arg: &str) -> Result<()> {
     if arg.is_empty() {
-        return Err("edit command requires a non-empty argument".to_string());
+        return Err(anyhow!("edit command requires a non-empty argument"));
     }
 
     match typ {
@@ -15,7 +16,7 @@ pub fn run(typ: &str, arg: &str) -> Result<(), String> {
             let path = files::find_config_file(arg)?;
             files::open_editor(&path)
         }
-        _ => Err(format!(
+        _ => Err(anyhow!(
             "invalid edit type '{}'. Must be '{}' or '{}'",
             typ,
             crate::internal::constants::EDIT_TYPE_DOTS,
