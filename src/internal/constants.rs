@@ -3,15 +3,7 @@
  use anyhow::{anyhow, Result};
 
 // Command names
-pub const CMD_APPLY: &str = "apply";
-pub const CMD_EDIT: &str = "edit";
-pub const CMD_DOTS: &str = "dots";
-pub const CMD_ADD: &str = "add";
-pub const CMD_ADOPT: &str = "adopt";
-pub const CMD_FIND: &str = "find";
-pub const CMD_CONFIGCHECK: &str = "configcheck";
-pub const CMD_CONFIGHOST: &str = "confighost";
-pub const CMD_CLEAN: &str = "clean";
+
 
 // Edit types
 pub const EDIT_TYPE_DOTS: &str = "dots";
