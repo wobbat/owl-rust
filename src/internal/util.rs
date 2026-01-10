@@ -204,7 +204,7 @@ pub fn execute_command_with_stderr_capture(
         thread::spawn(move || {
             use std::io::{BufRead, BufReader};
             let reader = BufReader::new(stderr);
-            for line in reader.lines().filter_map(Result::ok) {
+             for line in reader.lines().map_while(Result::ok) {
                 match captured_stderr.lock() {
                     Ok(mut buf) => {
                         buf.push_str(&line);
@@ -455,7 +455,9 @@ mod tests {
 
     #[test]
     fn test_run_with_spinner() {
-        let result: Result<i32, String> = run_with_spinner(|| Ok(42), "Testing spinner");
+        use super::spinner;
+        let config = spinner::SpinnerConfig { timeout_secs: 1, delay_ms: 100, cleanup_on_timeout: None };
+        let result = run_with_spinner_common(config, || "Testing spinner".to_string(), || Ok(Some(Ok(42))));
         assert_eq!(result.unwrap(), 42);
     }
 }

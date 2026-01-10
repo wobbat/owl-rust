@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use super::Config;
+use serde_json;
 
 /// Validate a provided .owl config file can be parsed
 pub fn run_configcheck(path: &str) -> Result<()> {

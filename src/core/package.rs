@@ -133,7 +133,7 @@ pub fn is_package_or_group_installed(package_name: &str) -> Result<bool> {
 /// Determine if a package is available in official repositories
 #[cfg(test)]
 pub fn is_repo_package(package_name: &str) -> Result<bool, String> {
-    let set = ParuPacman::new().batch_repo_available(&[package_name.to_string()])?;
+    let set = ParuPacman::new().batch_repo_available(&[package_name.to_string()]).map_err(|e| e.to_string())?;
     Ok(set.contains(package_name))
 }
 

@@ -3,6 +3,7 @@
 use crate::internal::constants;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
