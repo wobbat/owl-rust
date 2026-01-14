@@ -1,6 +1,6 @@
 # Owl
 
-A dotfile and package manager.
+A dotfile and package manager with declarative configuration files.
 
 ## Usage
 
