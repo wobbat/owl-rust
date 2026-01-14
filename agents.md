@@ -1,4 +1,6 @@
-# Agents
+# Distorted (ted for short)
+
+<high level of what we are building>
 
 ## Project Structure
 
