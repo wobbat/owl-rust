@@ -1,6 +1,6 @@
-# Distorted (ted for short)
+# OWL
 
-<high level of what we are building>
+A flexible CLI tool for managing and applying dotfiles across different hosts. It allows you to add, adopt, find, and apply configuration files and packages with support for dry-run mode and verbose output.
 
 ## Project Structure
 
