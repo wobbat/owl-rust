@@ -1,7 +1,7 @@
+use anyhow::{Result, anyhow};
 use std::collections::HashSet;
 use std::env;
 use std::path::Path;
-use anyhow::{anyhow, Result};
 
 use super::Config;
 
@@ -13,9 +13,7 @@ impl Config {
         )
     }
 
-    pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(
-        owl_root: P,
-    ) -> Result<Self> {
+    pub fn load_all_relevant_config_files_from_path<P: AsRef<Path>>(owl_root: P) -> Result<Self> {
         let mut config = Config::new();
         let owl_root = owl_root.as_ref();
 
@@ -46,10 +44,7 @@ impl Config {
         Ok(config)
     }
 
-    fn load_config_if_exists(
-        config: &mut Config,
-        path: &Path,
-    ) -> Result<()> {
+    fn load_config_if_exists(config: &mut Config, path: &Path) -> Result<()> {
         if path.exists() {
             let loaded_config = Self::parse_file(path)?;
             config.add_if_not_exists(loaded_config);

@@ -1,23 +1,19 @@
-use std::path::Path;
- use anyhow::{anyhow, Result};
-
-/// Helper function to handle operation errors with custom message
-fn handle_operation_error(result: Result<()>) {
-    if let Err(e) = result {
-        eprintln!("{}", crate::internal::color::red(&format!("Error: {}", e)));
-        std::process::exit(1);
-    }
-}
+use crate::error::exit_on_error;
+use anyhow::Result;
 
 /// Run the find command to find where packages are defined in config files
 pub fn run(query: &[String]) {
     if query.is_empty() {
-        eprintln!("{}", crate::internal::color::red("Error: find command requires at least one argument"));
+        eprintln!(
+            "{}",
+            crate::internal::color::red("Error: find command requires at least one argument")
+        );
         std::process::exit(1);
     }
 
     // Determine if this is a config syntax query or a package name query
-    let is_config_syntax = query.len() > 1 || query[0].starts_with('@') || query[0].starts_with(':');
+    let is_config_syntax =
+        query.len() > 1 || query[0].starts_with('@') || query[0].starts_with(':');
 
     let results = if is_config_syntax {
         find_config_syntax_locations(query)
@@ -37,13 +33,18 @@ pub fn run(query: &[String]) {
             }
         }
         Err(err) => {
-            handle_operation_error(Err(err));
+            exit_on_error(Err(err));
         }
     }
 }
 
 /// Helper function to create a Location struct
-fn create_location(file_path: &str, line_number: usize, line_content: &str, context: LocationContext) -> Location {
+fn create_location(
+    file_path: &str,
+    line_number: usize,
+    line_content: &str,
+    context: LocationContext,
+) -> Location {
     Location {
         file_path: file_path.to_string(),
         line_number,
@@ -81,14 +82,20 @@ fn find_config_syntax_locations(query: &[String]) -> Result<Vec<Location>> {
 }
 
 /// Find package definitions in a single file
-fn find_package_in_file(package_name: &str, content: &str, file_path: &str) -> Result<Vec<Location>> {
+fn find_package_in_file(
+    package_name: &str,
+    content: &str,
+    file_path: &str,
+) -> Result<Vec<Location>> {
     let mut locations = Vec::new();
 
     for (line_num, line) in content.lines().enumerate() {
         let trimmed = line.trim();
 
         // Check for @package or @pkg declarations
-        if trimmed == format!("@package {}", package_name) || trimmed == format!("@pkg {}", package_name) {
+        if trimmed == format!("@package {}", package_name)
+            || trimmed == format!("@pkg {}", package_name)
+        {
             locations.push(Location {
                 file_path: file_path.to_string(),
                 line_number: line_num + 1,
@@ -114,7 +121,11 @@ fn find_package_in_file(package_name: &str, content: &str, file_path: &str) -> R
 }
 
 /// Find config syntax definitions in a single file
-fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) -> Result<Vec<Location>> {
+fn find_config_syntax_in_file(
+    query: &[String],
+    content: &str,
+    file_path: &str,
+) -> Result<Vec<Location>> {
     let mut locations = Vec::new();
     let search_term = query.join(" ");
 
@@ -148,39 +159,73 @@ fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) 
             // Search for :config directives
             else if search_pattern == ":config" {
                 if trimmed.starts_with(":config ") {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::ConfigDirective));
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::ConfigDirective,
+                    ));
                 }
             }
             // Search for :cfg directives
             else if search_pattern == ":cfg" {
                 if trimmed.starts_with(":cfg ") {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::ConfigDirective));
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::ConfigDirective,
+                    ));
                 }
             }
             // Search for :service directives
             else if search_pattern == ":service" {
                 if trimmed.starts_with(":service ") {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::ServiceDirective));
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::ServiceDirective,
+                    ));
                 }
             }
             // Search for @group declarations
             else if search_pattern == "@group" {
                 if trimmed.starts_with("@group ") {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::GroupDeclaration));
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::GroupDeclaration,
+                    ));
                 }
             }
             // Search for @package declarations (single argument)
             else if search_pattern.starts_with("@package ") {
                 let package_name = search_pattern.strip_prefix("@package ").unwrap();
-                if trimmed == format!("@package {}", package_name) || trimmed == format!("@pkg {}", package_name) {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::PackageDeclaration));
+                if trimmed == format!("@package {}", package_name)
+                    || trimmed == format!("@pkg {}", package_name)
+                {
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::PackageDeclaration,
+                    ));
                 }
             }
             // Search for @pkg declarations (single argument)
             else if search_pattern.starts_with("@pkg ") {
                 let package_name = search_pattern.strip_prefix("@pkg ").unwrap();
-                if trimmed == format!("@package {}", package_name) || trimmed == format!("@pkg {}", package_name) {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::PackageDeclaration));
+                if trimmed == format!("@package {}", package_name)
+                    || trimmed == format!("@pkg {}", package_name)
+                {
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::PackageDeclaration,
+                    ));
                 }
             }
         }
@@ -199,17 +244,28 @@ fn find_config_syntax_in_file(query: &[String], content: &str, file_path: &str) 
                         context: LocationContext::AlternativeSyntax,
                     });
                 }
-            }
-            else if directive == "@pkg" {
+            } else if directive == "@pkg" {
                 if trimmed == format!("@package {}", value) {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::AlternativeSyntax));
+                    locations.push(create_location(
+                        file_path,
+                        line_num + 1,
+                        line,
+                        LocationContext::AlternativeSyntax,
+                    ));
                 }
             }
             // Check for packages in sections
             else if (directive == "@packages" || directive == "@pkgs")
-                && trimmed == *value && is_in_packages_section(content, line_num) {
-                    locations.push(create_location(file_path, line_num + 1, line, LocationContext::PackagesSection));
-                }
+                && trimmed == *value
+                && is_in_packages_section(content, line_num)
+            {
+                locations.push(create_location(
+                    file_path,
+                    line_num + 1,
+                    line,
+                    LocationContext::PackagesSection,
+                ));
+            }
         }
     }
 
@@ -239,26 +295,7 @@ fn is_in_packages_section(content: &str, line_num: usize) -> bool {
 
 /// Get all config files from the owl directory
 fn get_all_config_files() -> Result<Vec<String>> {
-    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
-    let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
-
-    let mut files = Vec::new();
-
-    // Check main config
-    let main_config = format!("{}/main{}", owl_dir, crate::internal::constants::OWL_EXT);
-    if Path::new(&main_config).exists() {
-        files.push(main_config);
-    }
-
-    // Scan hosts directory
-    let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&hosts_dir, &mut files);
-
-    // Scan groups directory
-    let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&groups_dir, &mut files);
-
-    Ok(files)
+    crate::internal::files::get_all_config_files()
 }
 
 /// Display the found locations in a formatted way
@@ -268,9 +305,13 @@ fn display_locations(locations: &[Location]) {
     }
 
     // Group by file
-    let mut file_groups: std::collections::HashMap<String, Vec<&Location>> = std::collections::HashMap::new();
+    let mut file_groups: std::collections::HashMap<String, Vec<&Location>> =
+        std::collections::HashMap::new();
     for location in locations {
-        file_groups.entry(location.file_path.clone()).or_default().push(location);
+        file_groups
+            .entry(location.file_path.clone())
+            .or_default()
+            .push(location);
     }
 
     println!(
@@ -281,10 +322,7 @@ fn display_locations(locations: &[Location]) {
 
     for (file_path, file_locations) in file_groups {
         let friendly_path = file_path.replace(&std::env::var("HOME").unwrap_or_default(), "~");
-        println!(
-            "{}",
-            crate::internal::color::highlight(&friendly_path)
-        );
+        println!("{}", crate::internal::color::highlight(&friendly_path));
 
         for location in file_locations {
             let context_indicator = match location.context {

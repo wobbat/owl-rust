@@ -1,5 +1,5 @@
+use anyhow::{Result, anyhow};
 use std::fs;
-use anyhow::{anyhow, Result};
 
 use crate::core::config::Config;
 use crate::internal::color;
@@ -66,29 +66,7 @@ pub fn handle_clean_all() -> Result<()> {
 }
 
 fn get_all_config_files() -> Result<Vec<String>> {
-    use std::env;
-    use std::path::Path;
-
-    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
-    let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
-
-    let mut files = Vec::new();
-
-    // Check main config
-    let main_config = format!("{}/main{}", owl_dir, crate::internal::constants::OWL_EXT);
-    if Path::new(&main_config).exists() {
-        files.push(main_config);
-    }
-
-    // Scan hosts directory
-    let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&hosts_dir, &mut files);
-
-    // Scan groups directory
-    let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&groups_dir, &mut files);
-
-    Ok(files)
+    crate::internal::files::get_all_config_files()
 }
 
 fn optimize_config(config: &Config) -> String {
@@ -219,4 +197,3 @@ loose3"#;
         assert_eq!(optimized, expected);
     }
 }
-

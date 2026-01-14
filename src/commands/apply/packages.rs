@@ -1,22 +1,5 @@
 use crate::core::pm::PackageManager;
-use anyhow::Result;
-
-/// Helper function to handle operation errors with custom message
-fn handle_operation_error(operation: &str, result: Result<()>) {
-    if let Err(e) = result {
-        eprintln!(
-            "{}",
-            crate::internal::color::red(&format!("Failed to {}: {}", operation, e))
-        );
-    }
-}
-
-/// Helper function to handle operation errors with direct error message
-fn handle_direct_error(result: Result<()>) {
-    if let Err(e) = result {
-        eprintln!("{}", crate::internal::color::red(&e.to_string()));
-    }
-}
+use crate::error::{handle_error, handle_error_with_context};
 
 /// Parameters for package operations
 #[derive(Debug)]
@@ -145,7 +128,7 @@ pub fn categorize_install_sets(to_install: &[String]) -> (Vec<String>, Vec<Strin
     match crate::core::package::categorize_packages(to_install) {
         Ok(result) => result,
         Err(e) => {
-            handle_operation_error("categorize packages", Err(e));
+            handle_error_with_context("categorize packages", Err(e));
             (Vec::new(), Vec::new())
         }
     }
@@ -158,7 +141,7 @@ pub fn compute_aur_updates(dry_run: bool) -> Vec<String> {
     match super::analysis::get_aur_updates() {
         Ok(packages) => packages,
         Err(e) => {
-            handle_operation_error("check AUR updates", Err(e));
+            handle_error_with_context("check AUR updates", Err(e));
             Vec::new()
         }
     }
@@ -180,7 +163,7 @@ pub fn install_repo_packages(repo_to_install: &[String], dry_run: bool) {
             repo_to_install.join(", ")
         );
     } else {
-        handle_direct_error(crate::core::pm::ParuPacman::new().install_repo(repo_to_install));
+        handle_error(crate::core::pm::ParuPacman::new().install_repo(repo_to_install));
     }
 }
 
@@ -210,10 +193,10 @@ pub fn handle_aur_operations(
             return;
         }
         if !aur_to_install.is_empty() {
-            handle_direct_error(crate::core::pm::ParuPacman::new().install_aur(aur_to_install));
+            handle_error(crate::core::pm::ParuPacman::new().install_aur(aur_to_install));
         }
         if !aur_to_update.is_empty() {
-            handle_direct_error(crate::core::pm::ParuPacman::new().update_aur(aur_to_update));
+            handle_error(crate::core::pm::ParuPacman::new().update_aur(aur_to_update));
         }
     } else {
         println!(
@@ -231,5 +214,8 @@ pub fn update_repo_packages(dry_run: bool) {
         );
         return;
     }
-    handle_operation_error("update repo packages", crate::core::pm::ParuPacman::new().update_repo());
+    handle_error_with_context(
+        "update repo packages",
+        crate::core::pm::ParuPacman::new().update_repo(),
+    );
 }

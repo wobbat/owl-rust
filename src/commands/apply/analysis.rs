@@ -1,5 +1,5 @@
 use crate::core::pm::PackageManager;
- use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 /// Get list of AUR packages that can be updated
 pub fn get_aur_updates() -> Result<Vec<String>> {
@@ -44,9 +44,8 @@ pub fn analyze_system() -> anyhow::Result<Analysis> {
     // 1) Count upgradable packages
     let count_handle = thread::spawn(crate::core::package::get_package_count);
     // 2) Load config files
-    let config_handle = thread::spawn(|| {
-        crate::core::config::Config::load_all_relevant_config_files()
-    });
+    let config_handle =
+        thread::spawn(|| crate::core::config::Config::load_all_relevant_config_files());
     // 3) Load package state from disk
     let state_handle = thread::spawn(crate::core::state::PackageState::load);
     // 4) Prewarm installed package cache to avoid repeated -Q calls later
@@ -112,12 +111,14 @@ pub fn seed_managed_with_desired_installed(
     state: &mut crate::core::state::PackageState,
 ) -> anyhow::Result<bool> {
     let mut changed = false;
-    
+
     // Collect packages to check in batches
-    let packages_to_check: Vec<&String> = config.packages.keys()
+    let packages_to_check: Vec<&String> = config
+        .packages
+        .keys()
         .filter(|pkg| !state.is_managed(pkg))
         .collect();
-    
+
     if packages_to_check.is_empty() {
         return Ok(false);
     }
@@ -142,6 +143,6 @@ pub fn seed_managed_with_desired_installed(
             }
         }
     }
-    
+
     Ok(changed)
 }

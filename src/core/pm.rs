@@ -1,3 +1,4 @@
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Write;
@@ -5,7 +6,6 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
-use anyhow::{anyhow, Result};
 
 /// Retry a command with exponential backoff for network-related failures
 fn retry_command<F, T>(mut operation: F, max_retries: usize) -> Result<T>
@@ -37,7 +37,11 @@ where
                 // Clear the current line and show retry status
                 print!("\r\x1b[2K");
                 std::io::stdout().flush().ok();
-                print!("Retrying due to network errors... ({}/{})", attempt + 1, max_retries + 1);
+                print!(
+                    "Retrying due to network errors... ({}/{})",
+                    attempt + 1,
+                    max_retries + 1
+                );
                 std::io::stdout().flush().ok();
                 thread::sleep(delay);
 
@@ -50,8 +54,6 @@ where
 
     Err(last_error.unwrap_or_else(|| anyhow!("Unknown error")))
 }
-
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PackageSource {
@@ -121,31 +123,32 @@ impl PackageManager for ParuPacman {
         if packages.is_empty() {
             return Ok(HashSet::new());
         }
-        
+
         // Use a single pacman call for all packages to improve performance
         let mut cmd = Command::new("pacman");
         cmd.arg("-Si");
         cmd.args(packages);
-        
+
         let output = cmd
             .output()
             .map_err(|e| anyhow::anyhow!("Failed to check package info: {}", e))?;
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout);
         let repo_names = stdout
             .lines()
             .filter_map(|line| {
-                line.strip_prefix("Name").and_then(|rest| {
-                    rest.find(':').map(|idx| {
-                        let value = rest[idx + 1..].trim();
-                        if !value.is_empty() {
-                            Some(value.to_string())
-                        } else {
-                            None
-                        }
+                line.strip_prefix("Name")
+                    .and_then(|rest| {
+                        rest.find(':').map(|idx| {
+                            let value = rest[idx + 1..].trim();
+                            if !value.is_empty() {
+                                Some(value.to_string())
+                            } else {
+                                None
+                            }
+                        })
                     })
-                })
-                .flatten()
+                    .flatten()
             })
             .collect::<HashSet<_>>();
         Ok(repo_names)
@@ -157,11 +160,13 @@ impl PackageManager for ParuPacman {
                 let output = Command::new(crate::internal::constants::PACKAGE_MANAGER)
                     .args(["-Qu", "-q"])
                     .output()
-                    .map_err(|e| anyhow::anyhow!(
-                        "Failed to run {} -Qu: {}",
-                        crate::internal::constants::PACKAGE_MANAGER,
-                        e
-                    ))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "Failed to run {} -Qu: {}",
+                            crate::internal::constants::PACKAGE_MANAGER,
+                            e
+                        )
+                    })?;
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     Ok(stdout.lines().count())
@@ -366,7 +371,7 @@ impl PackageManager for ParuPacman {
     fn is_package_group(&self, package_name: &str) -> Result<bool> {
         // Check cache first
         let cache = GROUP_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        
+
         {
             let cache_guard = cache.lock().unwrap();
             if let Some(&is_group) = cache_guard.get(package_name) {
@@ -377,24 +382,27 @@ impl PackageManager for ParuPacman {
         let output = Command::new("pacman")
             .args(["-Sg", package_name])
             .output()
-            .map_err(|e| anyhow::anyhow!("Failed to check if {} is a group: {}", package_name, e))?;
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to check if {} is a group: {}", package_name, e)
+            })?;
 
         // If pacman -Sg succeeds and returns output, it's a group
-        let is_group = output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty();
-        
+        let is_group =
+            output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty();
+
         // Cache the result
         {
             let mut cache_guard = cache.lock().unwrap();
             cache_guard.insert(package_name.to_string(), is_group);
         }
-        
+
         Ok(is_group)
     }
 
     fn get_group_packages(&self, group_name: &str) -> Result<Vec<String>> {
         // Check cache first
         let cache = GROUP_PACKAGES_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        
+
         {
             let cache_guard = cache.lock().unwrap();
             if let Some(packages) = cache_guard.get(group_name) {
@@ -405,10 +413,15 @@ impl PackageManager for ParuPacman {
         let output = Command::new("pacman")
             .args(["-Sg", group_name])
             .output()
-            .map_err(|e| anyhow::anyhow!("Failed to get packages for group {}: {}", group_name, e))?;
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to get packages for group {}: {}", group_name, e)
+            })?;
 
         if !output.status.success() {
-            return Err(anyhow::anyhow!("Failed to get packages for group {}", group_name));
+            return Err(anyhow::anyhow!(
+                "Failed to get packages for group {}",
+                group_name
+            ));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -463,7 +476,9 @@ fn parse_header_line(line: &str) -> Result<SearchResult> {
     }
     let repo_name_part = parts[0];
     let (repo, name) = parse_repo_name(repo_name_part)?;
-    let version = parts.get(1).ok_or_else(|| anyhow::anyhow!("Missing version in header line"))?;
+    let version = parts
+        .get(1)
+        .ok_or_else(|| anyhow::anyhow!("Missing version in header line"))?;
     let installed = line.contains("[installed]");
     Ok(SearchResult {
         name: name.to_string(),
@@ -494,15 +509,16 @@ fn parse_paru_search_output(output: &str) -> Result<Vec<SearchResult>> {
             }
             current_result = Some(parse_header_line(trimmed_line)?);
         } else if original_line.starts_with("    ")
-            && let Some(ref mut result) = current_result {
-                let desc_part = trimmed_line;
-                if result.description.is_empty() {
-                    result.description = desc_part.to_string();
-                } else {
-                    result.description.push(' ');
-                    result.description.push_str(desc_part);
-                }
+            && let Some(ref mut result) = current_result
+        {
+            let desc_part = trimmed_line;
+            if result.description.is_empty() {
+                result.description = desc_part.to_string();
+            } else {
+                result.description.push(' ');
+                result.description.push_str(desc_part);
             }
+        }
     }
     if let Some(result) = current_result {
         results.push(result);

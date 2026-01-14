@@ -198,36 +198,14 @@ fn add_package_to_config(package_name: &str) -> anyhow::Result<()> {
 }
 
 /// Get relevant config files for the current system
-#[allow(clippy::collapsible_if)]
 fn get_relevant_config_files() -> anyhow::Result<Vec<String>> {
-    let home =
-        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
-    let owl_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
-
-    let mut files = Vec::new();
-
-    // Check main config
-    let main_config = format!("{}/main{}", owl_dir, crate::internal::constants::OWL_EXT);
-    if std::path::Path::new(&main_config).exists() {
-        files.push(main_config);
-    }
-
-    // Scan all files in hosts directory
-    let hosts_dir = format!("{}/{}", owl_dir, crate::internal::constants::HOSTS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&hosts_dir, &mut files);
-
-    // Scan all files in groups directory
-    let groups_dir = format!("{}/{}", owl_dir, crate::internal::constants::GROUPS_DIR);
-    crate::internal::files::scan_directory_for_owl_files(&groups_dir, &mut files);
-
-    Ok(files)
+    crate::internal::files::get_all_config_files()
 }
 
 /// Get the main config file path
 fn get_main_config_path() -> anyhow::Result<String> {
     use std::path::PathBuf;
-    let home =
-        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let path = PathBuf::from(home)
         .join(crate::internal::constants::OWL_DIR)
         .join(crate::internal::constants::MAIN_CONFIG_FILE);
@@ -249,7 +227,8 @@ fn add_package_to_file(package_name: &str, file_path: &str) -> anyhow::Result<()
     if content.lines().any(|line| line.trim() == package_name) {
         return Err(anyhow!(
             "Package '{}' already exists in {}",
-            package_name, file_path
+            package_name,
+            file_path
         ));
     }
 

@@ -3,23 +3,13 @@ pub mod dotfiles;
 pub mod packages;
 pub mod system;
 
-use anyhow::Result;
-
-/// Helper function to handle operation errors with custom message
-fn handle_operation_error(operation: &str, result: Result<()>) {
-    if let Err(e) = result {
-        eprintln!(
-            "{}",
-            crate::internal::color::red(&format!("Failed to {}: {}", operation, e))
-        );
-    }
-}
+use crate::error::handle_error_with_context;
 
 /// Run the apply command to update packages and system
 #[allow(clippy::collapsible_if)]
-pub fn run(opts: &crate::cli::handler::CliOptions) {
-    let dry_run = opts.global.dry_run;
-    let non_interactive = opts.global.non_interactive;
+pub fn run(flags: &crate::cli::handler::GlobalFlags) {
+    let dry_run = flags.dry_run;
+    let non_interactive = flags.non_interactive;
     if dry_run {
         println!(
             "  {} Dry run mode - no changes will be made to the system",
@@ -42,7 +32,8 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
     };
 
     // Separate actions into installs and removals
-    let to_install: Vec<String> = analysis.actions
+    let to_install: Vec<String> = analysis
+        .actions
         .iter()
         .filter_map(|action| match action {
             crate::core::package::PackageAction::Install { name } => Some(name.clone()),
@@ -50,7 +41,8 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         })
         .collect();
 
-    let to_remove: Vec<String> = analysis.actions
+    let to_remove: Vec<String> = analysis
+        .actions
         .iter()
         .filter_map(|action| match action {
             crate::core::package::PackageAction::Remove { name } => Some(name.clone()),
@@ -78,11 +70,7 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
         non_interactive,
         had_uninstalled,
     };
-    packages::install_and_update_packages(
-        &to_install,
-        &package_params,
-        &analysis.config,
-    );
+    packages::install_and_update_packages(&to_install, &package_params, &analysis.config);
 
     // After operations, mark newly installed packages as managed (only if installed by our tool)
     if !dry_run {
@@ -97,13 +85,13 @@ pub fn run(opts: &crate::cli::handler::CliOptions) {
                 }
                 Ok(false) => {}
                 Err(e) => {
-                    handle_operation_error(&format!("verify installation of {}", pkg), Err(e));
+                    handle_error_with_context(&format!("verify installation of {}", pkg), Err(e));
                 }
             }
         }
 
         if changed {
-            handle_operation_error("save package state", analysis.state.save());
+            handle_error_with_context("save package state", analysis.state.save());
         }
     }
 }

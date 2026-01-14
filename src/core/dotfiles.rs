@@ -3,7 +3,7 @@
 //! This module handles the synchronization of dotfiles from the dotfiles directory
 //! to their target locations in the user's home directory.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,8 +31,7 @@ pub struct DotfileAction {
 }
 
 fn owl_dotfiles_dir() -> Result<PathBuf> {
-    let home =
-        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     Ok(Path::new(&home)
         .join(crate::internal::constants::OWL_DIR)
         .join(crate::internal::constants::DOTFILES_DIR))
@@ -41,21 +40,17 @@ fn owl_dotfiles_dir() -> Result<PathBuf> {
 fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
+            return Path::new(&home).join(rest).to_string_lossy().into_owned();
         }
-    } else if path == "~"
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return home;
+    } else if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
     }
     path.to_string()
 }
 
-fn collect_files_recursively(
-    root: &Path,
-    rels: &mut Vec<PathBuf>,
-    base: &Path,
-) -> Result<()> {
+fn collect_files_recursively(root: &Path, rels: &mut Vec<PathBuf>, base: &Path) -> Result<()> {
     for entry in
         fs::read_dir(root).map_err(|e| anyhow!("Failed to read dir {}: {}", root.display(), e))?
     {
@@ -208,10 +203,7 @@ pub fn has_actionable_dotfiles(mappings: &[DotfileMapping]) -> Result<bool> {
 }
 
 /// Analyze and apply dotfiles
-pub fn apply_dotfiles(
-    mappings: &[DotfileMapping],
-    dry_run: bool,
-) -> Result<Vec<DotfileAction>> {
+pub fn apply_dotfiles(mappings: &[DotfileMapping], dry_run: bool) -> Result<Vec<DotfileAction>> {
     let mut actions = Vec::new();
     for m in mappings {
         let src = owl_dotfiles_dir()?.join(&m.source);

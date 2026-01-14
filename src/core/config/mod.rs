@@ -38,7 +38,10 @@ mod tests {
 
         let config = Config::parse(content).unwrap();
         assert!(config.packages.contains_key("test"));
-        assert_eq!(config.packages["test"].config, vec!["test -> ~/.config/test"]);
+        assert_eq!(
+            config.packages["test"].config,
+            vec!["test -> ~/.config/test"]
+        );
     }
 
     #[test]
@@ -300,6 +303,9 @@ vi
         let config = Config::parse(content).unwrap();
 
         assert!(config.packages.contains_key("test"));
-        assert_eq!(config.packages["test"].config, vec!["test -> ~/.config/test"]);
+        assert_eq!(
+            config.packages["test"].config,
+            vec!["test -> ~/.config/test"]
+        );
     }
 }

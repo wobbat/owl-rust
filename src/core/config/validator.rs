@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
 use super::Config;
+use anyhow::{Result, anyhow};
 use serde_json;
 
 /// Validate a provided .owl config file can be parsed
@@ -59,15 +59,16 @@ pub fn run_full_configcheck() -> Result<()> {
         groups_path.exists()
     );
     if groups_path.exists()
-        && let Ok(entries) = std::fs::read_dir(&groups_path) {
-            for entry in entries.flatten() {
-                println!(
-                    "  Group file: {} (exists: {})",
-                    entry.path().display(),
-                    entry.path().exists()
-                );
-            }
+        && let Ok(entries) = std::fs::read_dir(&groups_path)
+    {
+        for entry in entries.flatten() {
+            println!(
+                "  Group file: {} (exists: {})",
+                entry.path().display(),
+                entry.path().exists()
+            );
         }
+    }
 
     match Config::load_all_relevant_config_files() {
         Ok(config) => {
@@ -77,7 +78,8 @@ pub fn run_full_configcheck() -> Result<()> {
             );
             println!(
                 "{}",
-                serde_json::to_string_pretty(&config).map_err(|e| anyhow!("Failed to serialize config: {}", e))?
+                serde_json::to_string_pretty(&config)
+                    .map_err(|e| anyhow!("Failed to serialize config: {}", e))?
             );
 
             // Print summary
@@ -118,8 +120,7 @@ pub fn run_full_configcheck() -> Result<()> {
 pub fn run_confighost() -> Result<()> {
     let hostname =
         crate::internal::constants::get_host_name().unwrap_or_else(|_| "unknown".to_string());
-    let home =
-        std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
     let path = std::path::Path::new(&home)
         .join(crate::internal::constants::OWL_DIR)
         .join("hosts")

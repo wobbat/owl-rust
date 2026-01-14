@@ -1,6 +1,6 @@
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::path::Path;
-use anyhow::{anyhow, Result};
 
 use super::{Config, Package};
 
@@ -133,7 +133,9 @@ impl Config {
             if let Some(pkg_name) = current_package {
                 if let Some(package) = config.packages.get_mut(pkg_name) {
                     // Store the full source -> destination mapping
-                    package.config.push(format!("{} -> {}", source.trim(), sink.trim()));
+                    package
+                        .config
+                        .push(format!("{} -> {}", source.trim(), sink.trim()));
                 }
             }
         } else {
@@ -186,10 +188,7 @@ impl Config {
         Ok(())
     }
 
-    fn parse_global_env_directive(
-        config: &mut Config,
-        line: &str,
-    ) -> Result<()> {
+    fn parse_global_env_directive(config: &mut Config, line: &str) -> Result<()> {
         let env_part = line.strip_prefix("@env ").unwrap();
         if let Some((key, value)) = env_part.split_once('=') {
             config

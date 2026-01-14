@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
 use crate::internal::files;
+use anyhow::{Result, anyhow};
 
 /// Run the edit command to open files in editor
 pub fn run(typ: &str, arg: &str) -> Result<()> {

@@ -1,9 +1,8 @@
 //! Application-wide constants
 
- use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 // Command names
-
 
 // Edit types
 pub const EDIT_TYPE_DOTS: &str = "dots";

@@ -1,26 +1,35 @@
 //! File operations utilities
 
+use anyhow::{Result, anyhow};
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use anyhow::{anyhow, Result};
+
+use crate::internal::constants;
+
+/// Get the owl root directory (~/.owl)
+fn owl_dir() -> Result<PathBuf> {
+    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    Ok(PathBuf::from(home).join(constants::OWL_DIR))
+}
 
 /// Scan a directory for .owl files and add them to the files vector
-pub fn scan_directory_for_owl_files(directory_path: &str, files: &mut Vec<String>) {
-    if let Ok(entries) = std::fs::read_dir(directory_path) {
+pub fn scan_directory_for_owl_files(directory: &Path, files: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(directory) {
         for entry in entries.flatten() {
-            if let Some(path) = entry.path().to_str()
-                && path.ends_with(crate::internal::constants::OWL_EXT) {
-                    files.push(path.to_string());
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "owl") {
+                if let Some(path_str) = path.to_str() {
+                    files.push(path_str.to_string());
                 }
+            }
         }
     }
 }
 
 /// Open a file in the user's preferred editor
 pub fn open_editor(path: &str) -> Result<()> {
-    let editor = env::var("EDITOR")
-        .unwrap_or_else(|_| crate::internal::constants::DEFAULT_EDITOR.to_string());
+    let editor = env::var("EDITOR").unwrap_or_else(|_| constants::DEFAULT_EDITOR.to_string());
 
     Command::new(&editor)
         .arg(path)
@@ -37,48 +46,24 @@ pub fn open_editor(path: &str) -> Result<()> {
 
 /// Find a config file in the standard locations
 pub fn find_config_file(arg: &str) -> Result<String> {
-    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let base_dir = owl_dir()?;
+    let arg_with_ext = format!("{}{}", arg, constants::OWL_EXT);
 
-    let base_dir = format!("{}/{}", home, crate::internal::constants::OWL_DIR);
     let search_paths = [
-        format!(
-            "{}/{}{}",
-            base_dir,
-            arg,
-            crate::internal::constants::OWL_EXT
-        ),
-        format!("{}/{}", base_dir, arg),
-        format!(
-            "{}/{}/{}{}",
-            base_dir,
-            crate::internal::constants::HOSTS_DIR,
-            arg,
-            crate::internal::constants::OWL_EXT
-        ),
-        format!(
-            "{}/{}/{}",
-            base_dir,
-            crate::internal::constants::HOSTS_DIR,
-            arg
-        ),
-        format!(
-            "{}/{}/{}{}",
-            base_dir,
-            crate::internal::constants::GROUPS_DIR,
-            arg,
-            crate::internal::constants::OWL_EXT
-        ),
-        format!(
-            "{}/{}/{}",
-            base_dir,
-            crate::internal::constants::GROUPS_DIR,
-            arg
-        ),
+        base_dir.join(&arg_with_ext),
+        base_dir.join(arg),
+        base_dir.join(constants::HOSTS_DIR).join(&arg_with_ext),
+        base_dir.join(constants::HOSTS_DIR).join(arg),
+        base_dir.join(constants::GROUPS_DIR).join(&arg_with_ext),
+        base_dir.join(constants::GROUPS_DIR).join(arg),
     ];
 
     for path in &search_paths {
-        if Path::new(path).exists() {
-            return Ok(path.clone());
+        if path.exists() {
+            return path
+                .to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow!("Invalid path encoding"));
         }
     }
 
@@ -87,13 +72,30 @@ pub fn find_config_file(arg: &str) -> Result<String> {
 
 /// Get the path for a dotfile
 pub fn get_dotfile_path(filename: &str) -> Result<String> {
-    let home = env::var("HOME").map_err(|_| anyhow!("HOME environment variable not set"))?;
+    let path = owl_dir()?.join(constants::DOTFILES_DIR).join(filename);
+    path.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("Invalid path encoding"))
+}
 
-    Ok(format!(
-        "{}/{}/{}/{}",
-        home,
-        crate::internal::constants::OWL_DIR,
-        crate::internal::constants::DOTFILES_DIR,
-        filename
-    ))
+/// Get all config files from the owl directory (main, hosts, and groups)
+pub fn get_all_config_files() -> Result<Vec<String>> {
+    let owl = owl_dir()?;
+    let mut files = Vec::new();
+
+    // Check main config
+    let main_config = owl.join(constants::MAIN_CONFIG_FILE);
+    if main_config.exists() {
+        if let Some(path_str) = main_config.to_str() {
+            files.push(path_str.to_string());
+        }
+    }
+
+    // Scan hosts directory
+    scan_directory_for_owl_files(&owl.join(constants::HOSTS_DIR), &mut files);
+
+    // Scan groups directory
+    scan_directory_for_owl_files(&owl.join(constants::GROUPS_DIR), &mut files);
+
+    Ok(files)
 }

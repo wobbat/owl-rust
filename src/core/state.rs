@@ -81,8 +81,6 @@ pub struct PackageState {
     pub managed: Vec<String>,
 }
 
-
-
 /// Specific implementation for untracked packages (JSON format)
 struct UntrackedPackages;
 
@@ -139,6 +137,9 @@ impl StatePersistence<Vec<String>> for ManagedPackages {
     }
 }
 
+// Some methods are part of the public API for future use (e.g., CLI commands for managing
+// hidden/untracked packages). They are tested but not yet used in the main application.
+#[allow(dead_code)]
 impl PackageState {
     /// Load package state from ~/.owl/.state directory
     pub fn load() -> Result<Self> {
@@ -175,59 +176,67 @@ impl PackageState {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    /// Check if a package is in the untracked list
     pub fn is_untracked(&self, package: &str) -> bool {
         self.untracked.contains(&package.to_string())
     }
-    #[allow(dead_code)]
+
+    /// Check if a package is in the hidden list
     pub fn is_hidden(&self, package: &str) -> bool {
         self.hidden.contains(&package.to_string())
     }
+
+    /// Check if a package is managed by owl
     pub fn is_managed(&self, package: &str) -> bool {
         self.managed.contains(&package.to_string())
     }
 
-    #[allow(dead_code)]
+    /// Add a package to the untracked list
     pub fn add_untracked(&mut self, package: String) {
         if !self.untracked.contains(&package) {
             self.untracked.push(package);
             self.untracked.sort();
         }
     }
-    #[allow(dead_code)]
+
+    /// Remove a package from the untracked list
     pub fn remove_untracked(&mut self, package: &str) {
         self.untracked.retain(|p| p != package);
     }
-    #[allow(dead_code)]
+
+    /// Add a package to the hidden list
     pub fn add_hidden(&mut self, package: String) {
         if !self.hidden.contains(&package) {
             self.hidden.push(package);
             self.hidden.sort();
         }
     }
-    #[allow(dead_code)]
+
+    /// Remove a package from the hidden list
     pub fn remove_hidden(&mut self, package: &str) {
         self.hidden.retain(|p| p != package);
     }
+
+    /// Add a package to the managed list
     pub fn add_managed(&mut self, package: String) {
         if !self.managed.contains(&package) {
             self.managed.push(package);
             self.managed.sort();
         }
     }
+
+    /// Remove a package from the managed list
     pub fn remove_managed(&mut self, package: &str) {
         self.managed.retain(|p| p != package);
     }
 
     fn get_state_dir() -> Result<PathBuf> {
-        let home =
-            std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
+        let home = std::env::var("HOME")
+            .map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
         Ok(PathBuf::from(home)
             .join(constants::OWL_DIR)
             .join(constants::STATE_DIR))
     }
-
-
 }
 
 #[cfg(test)]

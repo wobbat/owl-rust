@@ -45,7 +45,10 @@ pub fn generate_apply_output_with_install(
         color::yellow(&format!("upgrade {}", package_count)),
         color::red(&format!("remove {}", remove_count))
     );
-    println!("  managed pkgs: {}", color::bold(&managed_count.to_string()));
+    println!(
+        "  managed pkgs: {}",
+        color::bold(&managed_count.to_string())
+    );
     if service_count > 0 {
         println!("  services: {}", color::bold(&service_count.to_string()));
     }
